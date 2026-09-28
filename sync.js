@@ -148,13 +148,13 @@
       rhr: () => listAll('daily-resting-heart-rate', `daily_resting_heart_rate.date >= "${d31}"`, 100, 1).then((p) => M.mapDaily('rhr', p)),
       hrv: () => listAll('daily-heart-rate-variability', `daily_heart_rate_variability.date >= "${d31}"`, 100, 1).then((p) => M.mapDaily('hrv', p)),
       spo2: () => listAll('daily-oxygen-saturation', `daily_oxygen_saturation.date >= "${d7}"`, 20, 1).then((p) => M.mapDaily('spo2', p)),
-      resp: () => listAll('daily-respiratory-rate', `daily_respiratory_rate.date >= "${d7}"`, 20, 1).then((p) => M.mapDaily('resp', p)),
+      resp: () => listAll('daily-respiratory-rate', `daily_respiratory_rate.date >= "${d31}"`, 100, 1).then((p) => M.mapDaily('resp', p)),
       temp: () => listAll('daily-sleep-temperature-derivations', `daily_sleep_temperature_derivations.date >= "${d7}"`, 20, 1).then((p) => M.mapDaily('temp', p)),
       weight: () => listAll('weight', `weight.sample_time.civil_time >= "${d31}"`, 100, 1).then(M.mapWeight),
       steps: () => rollup('steps', d31, tomorrow).then((r) => M.mapRollup('steps', r)),
-      calories: () => rollup('total-calories', d7, tomorrow).then((r) => M.mapRollup('calories', r)),
-      azm: () => rollup('active-zone-minutes', d7, tomorrow).then((r) => M.mapRollup('azm', r)),
-      zones: () => rollup('time-in-heart-rate-zone', d7, tomorrow).then((r) => M.mapRollup('zones', r)),
+      calories: () => rollup('total-calories', d15, tomorrow).then((r) => M.mapRollup('calories', r)),
+      azm: () => rollup('active-zone-minutes', d15, tomorrow).then((r) => M.mapRollup('azm', r)),
+      zones: () => rollup('time-in-heart-rate-zone', d15, tomorrow).then((r) => M.mapRollup('zones', r)),
       workouts: () => listAll('exercise', `exercise.interval.civil_start_time >= "${d14}"`, 25, 2).then(M.mapExercise)
     };
     const names = Object.keys(jobs);

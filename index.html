@@ -9,12 +9,12 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Pulse">
-  <meta name="description" content="Personal daily health dashboard: sleep, recovery, strain, workouts and health metrics. Manual entry, stored on this device.">
+  <meta name="description" content="Personal daily health dashboard: sleep, recovery, strain, workouts and health metrics. Calculated automatically from Google Health, stored on this device.">
   <title>Pulse</title>
-  <link rel="manifest" href="manifest.json?v=4">
-  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png?v=4">
-  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png?v=4">
-  <link rel="stylesheet" href="styles.css?v=4">
+  <link rel="manifest" href="manifest.json?v=5">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png?v=5">
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png?v=5">
+  <link rel="stylesheet" href="styles.css?v=5">
 </head>
 <body>
   <main class="app">
@@ -22,16 +22,17 @@
     <!-- TODAY -->
     <section class="panel" id="tab-today" data-panel="today" aria-labelledby="h-today">
       <header class="top">
-        <div><p class="eyebrow" data-date>Today</p><h1 id="h-today">Today</h1></div>
+        <div><button class="datebtn" type="button" data-datepick aria-label="Choose a day"><span data-date>Today</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button><h1 id="h-today">Today</h1></div>
         <button class="gear" type="button" data-settings aria-label="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
       </header>
+      <div class="viewbar" data-viewbar hidden></div>
 
       <div class="ptr" id="ptr" hidden>Pull to sync</div>
       <div class="syncbar" id="syncbar" hidden></div>
       <div class="card connect-card" id="connect-card" hidden></div>
 
-      <div class="card">
-        <div class="rings3" data-rings="sleep,recovery,strain"></div>
+      <div class="card rings-card">
+        <div class="rings3" data-rings="strain,recovery,sleep"></div>
         <p class="updated" id="rings-updated" hidden></p>
         <p class="hint" id="today-empty" hidden></p>
         <button class="linkbtn center" type="button" data-explain>How are these calculated?</button>
@@ -68,9 +69,10 @@
     <!-- FITNESS -->
     <section class="panel" id="tab-fitness" data-panel="fitness" aria-labelledby="h-fitness" hidden>
       <header class="top">
-        <div><p class="eyebrow" data-date>Today</p><h1 id="h-fitness">Fitness</h1></div>
+        <div><button class="datebtn" type="button" data-datepick aria-label="Choose a day"><span data-date>Today</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button><h1 id="h-fitness">Fitness</h1></div>
         <button class="gear" type="button" data-settings aria-label="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
       </header>
+      <div class="viewbar" data-viewbar hidden></div>
 
       <div class="card hero">
         <div class="hero-ring" data-rings="strain" data-size="lg"></div>
@@ -83,7 +85,7 @@
       </div>
 
       <div class="card">
-        <div class="card-head"><h2>Today's workouts</h2><span class="muted small" id="today-total"></span></div>
+        <div class="card-head"><h2 id="fit-today-h">Today's workouts</h2><span class="muted small" id="today-total"></span></div>
         <ul class="log" id="today-list"></ul>
         <p class="disclaimer">Recorded by your Fitbit and synced from Google Health.</p>
       </div>
@@ -107,21 +109,24 @@
     <!-- SLEEP -->
     <section class="panel" id="tab-sleep" data-panel="sleep" aria-labelledby="h-sleep" hidden>
       <header class="top">
-        <div><p class="eyebrow" data-date>Today</p><h1 id="h-sleep">Sleep</h1></div>
+        <div><button class="datebtn" type="button" data-datepick aria-label="Choose a day"><span data-date>Today</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button><h1 id="h-sleep">Sleep</h1></div>
         <button class="gear" type="button" data-settings aria-label="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
       </header>
+      <div class="viewbar" data-viewbar hidden></div>
 
       <div class="card hero">
         <div class="hero-ring" data-rings="sleep" data-size="lg"></div>
         <div class="hero-info">
-          <span class="muted">Last night</span>
+          <span class="muted" id="sl-label">Last night</span>
           <span class="hero-val" id="sl-hours">–</span>
           <span class="muted small" id="sl-sub"></span>
           <span id="sl-src"></span>
         </div>
       </div>
-      <div class="card" id="sl-stages" hidden></div>
       <button class="btn block sl-detail" type="button" data-detail="sleep">Sleep score details</button>
+      <div class="card" id="sl-stages" hidden></div>
+      <div class="card" id="sl-explain" hidden></div>
+      <div class="card" id="sl-tips" hidden></div>
 
       <div class="card">
         <div class="card-head"><h2>Last 7 nights</h2><span class="muted small" id="sleep-avg"></span></div>
@@ -132,9 +137,10 @@
     <!-- HEALTH -->
     <section class="panel" id="tab-health" data-panel="health" aria-labelledby="h-health" hidden>
       <header class="top">
-        <div><p class="eyebrow" data-date>Today</p><h1 id="h-health">Health</h1></div>
+        <div><button class="datebtn" type="button" data-datepick aria-label="Choose a day"><span data-date>Today</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button><h1 id="h-health">Health</h1></div>
         <button class="gear" type="button" data-settings aria-label="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
       </header>
+      <div class="viewbar" data-viewbar hidden></div>
 
       <div class="card hero">
         <div class="hero-ring" data-rings="recovery" data-size="lg"></div>
@@ -183,9 +189,9 @@
   </div>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="config.js?v=4"></script>
-  <script src="metrics.js?v=4"></script>
-  <script src="sync.js?v=4"></script>
-  <script src="app.js?v=4"></script>
+  <script src="config.js?v=5"></script>
+  <script src="metrics.js?v=5"></script>
+  <script src="sync.js?v=5"></script>
+  <script src="app.js?v=5"></script>
 </body>
 </html>

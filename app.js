@@ -1,18 +1,50 @@
-/* Pulse v4 – daily health dashboard. Sleep, Recovery and Strain are always calculated from Google Health data
+/* Pulse v5 – daily health dashboard. Sleep, Recovery and Strain are always calculated from Google Health data
    (never typed in); missing data shows "–" with the reason. Nothing is invented. */
 (() => {
   'use strict';
 
   const KEY = 'pulse.v1'; // storage key kept from v1; data is migrated in place (schema v2)
   const FONT = '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
-  const COL = { strain: '#1f8fff', sleep: '#6c5ce7', high: '#12b76a', mid: '#f5a800', low: '#f04438', text: '#0f1115', muted: '#6b7280', faint: '#b3b8c2', track: 'rgba(15,17,21,0.07)' };
+  const COL = { strain: '#ff8a00', sleep: '#4c3fd6', high: '#2f9e44', mid: '#e8a100', low: '#f03e3e', text: '#0f1115', muted: '#6b7280', faint: '#b3b8c2', track: 'rgba(15,17,21,0.07)' };
+  // Gradient ring strokes (start → end): strain yellow→orange, sleep light-blue→indigo, recovery tinted by zone.
+  const GRAD = { strain: ['#ffd43b', '#ff8a00'], sleep: ['#74c0fc', '#4c3fd6'], green: ['#c0eb75', '#2f9e44'], yellow: ['#ffe066', '#94d82d'], red: ['#ffa94d', '#f03e3e'] };
+  const STAGE_COL = { deep: '#3f2fb3', light: '#9d8cf5', rem: '#22b8cf', awake: '#f79009' };
+  // Sources shown in the app (details in docs/calibration.md).
+  const SOURCES = {
+    whoopRec: ['WHOOP: How recovery works (zones 1–99%)', 'https://www.whoop.com/gb/en/thelocker/how-does-whoop-recovery-work-101/'],
+    whoopAvg: ['WHOOP member averages (recovery ≈ 58%)', 'https://www.whoop.com/us/en/thelocker/member-averages-recovery-strain-sleep-hrv/'],
+    whoopStrain: ['WHOOP: How strain works (0–21, logarithmic)', 'https://www.whoop.com/us/en/thelocker/how-does-whoop-strain-work-101/'],
+    whoopCoach: ['WHOOP: Strain target from recovery', 'https://www.whoop.com/us/en/thelocker/strain-coach/'],
+    whoopNeed: ['WHOOP: How much sleep do I need?', 'https://www.whoop.com/us/en/thelocker/how-much-sleep-do-i-need/'],
+    oura: ['Oura: Readiness score (85+ optimal, 100 rare)', 'https://ouraring.com/blog/readiness-score/'],
+    ghSleep: ['Google Health: Sleep score bands (most people 72–83)', 'https://support.google.com/googlehealth/answer/14236513'],
+    ghReady: ['Google Health: Readiness (HRV, RHR, sleep)', 'https://support.google.com/googlehealth/answer/14236710'],
+    ghStages: ['Google Health: Sleep stages', 'https://support.google.com/googlehealth/answer/14236712'],
+    plews: ['Plews et al. 2012: HRV in elite triathletes', 'https://www.springermedicine.com/heart-rate-variability-in-elite-triathletes-is-variation-in-vari/21070152'],
+    buchheit: ['Buchheit 2014: Monitoring training status with HR measures', 'https://www.frontiersin.org/journals/physiology/articles/10.3389/fphys.2014.00073/full'],
+    edwards: ['Edwards TRIMP in football training vs matches', 'https://www.mdpi.com/2227-7080/11/3/79'],
+    paluch: ['Paluch et al. 2022 (Lancet Public Health): steps & mortality', 'https://www.thelancet.com/journals/lanpub/article/PIIS2468-2667(21)00302-9/fulltext'],
+    tudor: ['Tudor-Locke et al. 2011: steps for adolescents', 'https://pmc.ncbi.nlm.nih.gov/articles/PMC3166269/'],
+    aasm: ['AASM: Recommended sleep for children & teens (8–10 h at 13–18)', 'https://aasm.org/resources/pdf/pediatricsleepdurationconsensus.pdf'],
+    statpearls: ['StatPearls: Physiology, Sleep Stages', 'https://www.ncbi.nlm.nih.gov/books/NBK526132/'],
+    ohayon: ['Ohayon et al. 2004: sleep stage norms across ages', 'https://academic.oup.com/sleep/article/27/7/1255/2696490'],
+    vancauter: ['Van Cauter et al. 1998: deep sleep & growth hormone', 'https://academic.oup.com/sleep/article/21/6/553/2725972'],
+    walker: ['Walker et al. 2002: sleep & motor skill learning', 'https://walkerlab.berkeley.edu/reprints/Walker%20et%20al._Neuron_2002.pdf'],
+    mah: ['Mah et al. 2011: sleep extension in athletes', 'https://med.stanford.edu/news/all-news/2011/07/snooze-you-win-its-true-for-achieving-hoop-dreams-says-study.html'],
+    phillips: ['Phillips et al. 2017: irregular sleep & circadian timing', 'https://www.nature.com/articles/s41598-017-03171-4'],
+    stutz: ['Stutz et al. 2019: evening exercise & sleep (meta-analysis)', 'https://pubmed.ncbi.nlm.nih.gov/30374942/'],
+    okamoto: ['Okamoto-Mizuno & Mizuno 2012: heat & sleep', 'https://link.springer.com/article/10.1186/1880-6805-31-14'],
+    drake: ['Drake et al. 2013: caffeine 6 h before bed', 'https://aasm.org/late-afternoon-and-early-evening-caffeine-can-disrupt-sleep-at-night/'],
+    chang: ['Chang et al. 2015: evening screen light & melatonin', 'https://www.pnas.org/doi/abs/10.1073/pnas.1418490112']
+  };
+  const srcLink = (id) => (SOURCES[id] ? `<a class="srclink" href="${SOURCES[id][1]}" target="_blank" rel="noopener">${SOURCES[id][0]}</a>` : '');
 
   const RINGS = {
-    sleep:    { label: 'Sleep',    title: 'Sleep quality', max: 100, step: 1,   dec: 0, bump: 1,   start: 75, sub: 'Sleep quality / score, 0–100%' },
+    sleep:    { label: 'Sleep',    title: 'Sleep score',   max: 100, step: 1,   dec: 0, bump: 1,   start: 75, sub: 'Sleep score, 1–99' },
     recovery: { label: 'Recovery', title: 'Recovery',      max: 100, step: 1,   dec: 0, bump: 1,   start: 50, sub: 'Recovery / readiness, 0–100%' },
     strain:   { label: 'Strain',   title: 'Strain',        max: 21,  step: 0.1, dec: 1, bump: 0.5, start: 10, sub: 'Day strain, 0–21 scale' }
   };
-  const RING_ORDER = ['sleep', 'recovery', 'strain'];
+  const RING_ORDER = ['strain', 'recovery', 'sleep'];
 
   const HEALTH = {
     rhr:    { label: 'Resting HR',  unit: 'bpm',    min: 30, max: 120,   step: 1,   dec: 0, bump: 1,   start: 60,   color: '#f04438' },
@@ -88,6 +120,12 @@
 
   const pad = (n) => String(n).padStart(2, '0');
   const dayKey = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  // Date switcher: VIEW = selected past day (read-only history) or null for today.
+  let VIEW = null;
+  const viewKey = () => VIEW || dayKey();
+  const isTodayKey = (k) => k === dayKey();
+  const keyDate = (k) => { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d, 12); };
+  const prevKey = (k) => { const d = keyDate(k); d.setDate(d.getDate() - 1); return dayKey(d); };
   const isNum = (v) => typeof v === 'number' && isFinite(v);
   // All health values come from Google Health (synced cache). Old manually typed values (state.days) are kept in storage
   // but no longer used. Scores are calculated (metrics.js) and persisted per day in SCORES_KEY so they stay stable.
@@ -105,28 +143,36 @@
 
   // ---- automatic targets (Google Health API v4 exposes no goals, so they are derived from your own data) ----
   function sleepHoursSeries() { const o = {}; Object.entries(ser('sleep')).forEach(([k, v]) => { if (v && isNum(v.sleepHours)) o[k] = v.sleepHours; }); return o; }
-  function sleepTargetInfo(k = dayKey()) {
+  // Sleep need for the night ending on day k (WHOOP-style: 8.5 h base + strain + sleep debt − naps).
+  function sleepTargetInfo(k = viewKey()) {
     const ck = 'ST|' + k; if (ck in MEMO) return MEMO[ck];
     const PM = window.PulseMetrics;
-    return (MEMO[ck] = PM ? PM.sleepTarget(k, sleepHoursSeries()) : { value: 8, source: 'default', days: 0, need: 7 });
+    if (!PM) return { value: 8.5, base: 8.5, strainAdd: 0, debtAdd: 0, napSub: 0 };
+    const pk = prevKey(k), st = {}, sv = getVal('strain', pk);
+    if (sv !== null) st[pk] = sv;
+    return (MEMO[ck] = PM.sleepNeed(k, ser('sleep'), st));
   }
-  const sleepGoal = (k = dayKey()) => sleepTargetInfo(k).value;
-  function stepTargetInfo(k = dayKey()) {
+  const needText = (t) => `${fmtHours(t.base)} base${t.strainAdd ? ` + ${t.strainAdd} min for strain` : ''}${t.debtAdd ? ` + ${t.debtAdd} min sleep debt` : ''}${t.napSub ? ` − ${t.napSub} min naps` : ''}`;
+  const sleepGoal = (k = viewKey()) => sleepTargetInfo(k).value;
+  function stepTargetInfo(k = viewKey()) {
     const ck = 'SP|' + k; if (ck in MEMO) return MEMO[ck];
     const PM = window.PulseMetrics;
     return (MEMO[ck] = PM ? PM.stepTarget(k, ser('steps')) : { value: 10000, source: 'default', days: 0, need: 7 });
   }
-  function strainTargetInfo(k = dayKey()) { const PM = window.PulseMetrics; return PM ? PM.strainTarget(getVal('recovery', k)) : null; }
-  const targetSrc = (t) => (t.source === 'default' ? `default until ${t.need} days of data (${t.days} so far)` : `personal · ${t.days}-day average`);
+  function strainTargetInfo(k = viewKey()) { const PM = window.PulseMetrics; return PM ? PM.strainTarget(getVal('recovery', k)) : null; }
+  const targetSrc = (t) => (t.source === 'default' ? `default until ${t.need} days of data (${t.days} so far)` : `your ${t.days}-day average ${Math.round(t.avg).toLocaleString()} + 10%`);
   const fmtBand = (t) => (t ? `${t.low.toFixed(1)}–${t.high.toFixed(1)}` : '–');
 
   // ---- persisted daily score history ----
   const SCORES_KEY = 'pulse.scores';
   function loadScores() {
-    try { const s = JSON.parse(localStorage.getItem(SCORES_KEY) || 'null'); if (s && s.days && typeof s.days === 'object') return s; } catch (e) { /* ignore */ }
-    return { v: 1, days: {} };
+    // v2 = recalibrated formulas (Pulse v5); older stored scores are discarded and recalculated from the cache.
+    try { const s = JSON.parse(localStorage.getItem(SCORES_KEY) || 'null'); if (s && s.v === 2 && s.days && typeof s.days === 'object') return s; } catch (e) { /* ignore */ }
+    scoresDirty = true;
+    return { v: 2, days: {} };
   }
-  let SCORES = loadScores(), scoresDirty = false;
+  let scoresDirty = false;
+  let SCORES = loadScores();
   function saveScores() {
     if (!scoresDirty) return;
     const keys = Object.keys(SCORES.days).sort();
@@ -134,12 +180,11 @@
     try { localStorage.setItem(SCORES_KEY, JSON.stringify(SCORES)); } catch (e) { /* ignore */ }
     scoresDirty = false;
   }
-  const slim = (r) => { const o = { value: r.value }; ['parts', 'trimp', 'method', 'baseline', 'hrvDays', 'weights', 'goal'].forEach((x) => { if (r[x] !== undefined) o[x] = r[x]; }); return o; };
+  const slim = (r) => { const o = { value: r.value }; ['parts', 'trimp', 'method', 'baseline', 'hrvDays', 'weights', 'goal', 'z', 'need', 'pcts', 'awakePct', 'timingDev'].forEach((x) => { if (r[x] !== undefined) o[x] = r[x]; }); return o; };
   // Live calculation from the synced cache: returns {sig, res} or null when the inputs are not in the cache.
   function liveScore(f, k) {
     const PM = window.PulseMetrics;
     if (!PM || !SYNC || !SYNC.series) return null;
-    const goal = sleepGoal(k);
     if (f === 'strain') {
       const z = ser('zones')[k], a = ser('azm')[k];
       if (!z && !a) return null;
@@ -147,15 +192,17 @@
     }
     if (f === 'sleep') {
       const sl = syncedSleep(k);
-      if (!sl) return null;
-      return { sig: JSON.stringify([sl.minutesAsleep, sl.efficiency, sl.stages || null]), res: Object.assign(PM.computeSleepQuality(sl, goal) || {}, { goal }) };
+      if (!sl || !(sl.minutesAsleep > 0)) return null;
+      const goal = sleepGoal(k), timing = PM.timingDeviation(k, ser('sleep'));
+      // sig = the night's own data; need/timing come from earlier days, so a stored score stays stable.
+      return { sig: JSON.stringify([sl.minutesAsleep, sl.minutesInBed, sl.stages || null, sl.bedRel ?? null, sl.wakeRel ?? null]), res: Object.assign(PM.computeSleepScore(sl, goal, timing) || {}, { goal }) };
     }
     if (f === 'recovery') {
-      const hrv = ser('hrv'), rhr = ser('rhr');
+      const hrv = ser('hrv'), rhr = ser('rhr'), resp = ser('resp');
       if (!Object.keys(hrv).length) return null;
-      const sh = syncedVal('sleepHours', k);
-      const r = PM.computeRecovery(k, hrv, rhr, sh, goal);
-      return { sig: JSON.stringify([hrv[k] ?? null, rhr[k] ?? null, sh]), res: r && Object.assign(r, { goal }) };
+      const sq = getVal('sleep', k);
+      const r = PM.computeRecovery(k, hrv, rhr, sq, resp);
+      return { sig: JSON.stringify([hrv[k] ?? null, rhr[k] ?? null, resp[k] ?? null, sq]), res: r };
     }
     return null;
   }
@@ -173,7 +220,7 @@
     if (stored && isNum(stored.v)) return { v: stored.v, src: 'calc', info: stored.info, at: stored.at, history: true };
     return { v: null, src: null, info: live && live.res };
   }
-  function metric(f, k = dayKey()) {
+  function metric(f, k = viewKey()) {
     const ck = f + '|' + k;
     if (ck in MEMO) return MEMO[ck];
     let r;
@@ -181,16 +228,16 @@
     else { const sv = syncedVal(f, k); r = sv !== null ? { v: sv, src: 'google' } : { v: null, src: null }; }
     return (MEMO[ck] = r);
   }
-  function getVal(f, k = dayKey()) { return metric(f, k).v; }
-  function getStr(f, k = dayKey()) { const sl = syncedSleep(k); return (f === 'bedtime' || f === 'wake') && sl && sl[f] ? sl[f] : null; }
+  function getVal(f, k = viewKey()) { return metric(f, k).v; }
+  function getStr(f, k = viewKey()) { const sl = syncedSleep(k); return (f === 'bedtime' || f === 'wake') && sl && sl[f] ? sl[f] : null; }
   // Why a score is missing (shown instead of a number).
-  function missingReason(f, k = dayKey()) {
+  function missingReason(f, k = viewKey()) {
     const st = window.PulseSync ? window.PulseSync.status() : 'no-client';
     if (!(SYNC && SYNC.fetchedAt)) return st === 'connected' ? 'Syncing with Google Health…' : st === 'expired' ? 'Reconnect Google Health' : 'Connect Google Health';
-    const info = metric(f, k).info;
-    if (f === 'recovery') return info && info.calibrating ? `Calibrating: ${info.hrvDays} of ${info.need} days of HRV` : 'No HRV recorded yet today';
-    if (f === 'sleep') return 'No sleep recorded yet';
-    return 'No heart-rate zone data yet today';
+    const info = metric(f, k).info, today = isTodayKey(k);
+    if (f === 'recovery') return info && info.calibrating ? `Calibrating: ${info.hrvDays} of ${info.need} days of HRV` : today ? 'No HRV recorded yet today' : 'No HRV recorded that day';
+    if (f === 'sleep') return today ? 'No sleep recorded yet' : 'No sleep recorded that night';
+    return today ? 'No heart-rate zone data yet today' : 'No heart-rate zone data that day';
   }
   const SRC_LABEL = { google: 'Google Health', calc: 'Calculated' };
   const srcBadge = (src) => (src ? `<span class="src src-${src}">${SRC_LABEL[src]}</span>` : '');
@@ -213,15 +260,17 @@
   const recColor = (v) => (v === null ? COL.mid : v >= 67 ? COL.high : v >= 34 ? COL.mid : COL.low);
   const recZone = (v) => (v === null ? '' : v >= 67 ? 'Green' : v >= 34 ? 'Yellow' : 'Red');
   const ringColor = (m, v) => (m === 'strain' ? COL.strain : m === 'sleep' ? COL.sleep : recColor(v));
+  const ringGrad = (m, v) => (m === 'recovery' ? GRAD[v === null ? 'yellow' : v >= 67 ? 'green' : v >= 34 ? 'yellow' : 'red'] : GRAD[m]);
+  const sleepBand = (v) => (v === null ? '' : v >= 90 ? 'Excellent' : v >= 80 ? 'Good' : v >= 60 ? 'Fair' : 'Poor');
   const ringPct = (m, v) => (v === null ? null : m === 'strain' ? Math.round((v / 21) * 100) : Math.round(v));
   function ringSub(m, v, forImage) {
     if (v === null) return forImage ? 'no data' : '';
     if (m === 'strain') return `${v.toFixed(1)} / 21`;
-    if (m === 'sleep') { const h = getVal('sleepHours'); return h !== null ? fmtHours(h) : 'quality'; }
+    if (m === 'sleep') { const h = getVal('sleepHours'); return h !== null ? fmtHours(h) : sleepBand(v); }
     return recZone(v);
   }
   function last7() {
-    const out = [], base = new Date(); base.setHours(12, 0, 0, 0);
+    const out = [], base = keyDate(viewKey());
     for (let i = 6; i >= 0; i--) { const d = new Date(base); d.setDate(base.getDate() - i); out.push(d); }
     return out;
   }
@@ -233,12 +282,17 @@
 
   // ---------- ring widgets ----------
   const R = 52, CIRC = 2 * Math.PI * R;
+  let RID = 0;
   function ringWidgetHTML(m, size) {
+    const id = 'rg' + (++RID);
+    const hatch = m === 'strain' ? `<pattern id="${id}h" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="rgba(255,138,0,0.12)"/><rect width="2" height="5" fill="rgba(232,110,0,0.6)"/></pattern>` : '';
     return `<button class="ringw ${size || ''}" type="button" data-ring="${m}" aria-label="${RINGS[m].title}: details">
       <span class="ringw-g">
         <svg viewBox="0 0 120 120" aria-hidden="true">
+          <defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="g0" stop-color="${GRAD[m === 'recovery' ? 'yellow' : m][0]}"/><stop offset="1" class="g1" stop-color="${GRAD[m === 'recovery' ? 'yellow' : m][1]}"/></linearGradient>${hatch}</defs>
           <circle class="rt" cx="60" cy="60" r="${R}"/>
-          <circle class="rv" cx="60" cy="60" r="${R}" transform="rotate(-90 60 60)" style="stroke-dasharray:${CIRC} ${CIRC};stroke-dashoffset:${CIRC};opacity:0"/>
+          ${m === 'strain' ? `<circle class="rtgt" cx="60" cy="60" r="${R}" transform="rotate(-90 60 60)" stroke="url(#${id}h)" style="opacity:0"/>` : ''}
+          <circle class="rv" cx="60" cy="60" r="${R}" transform="rotate(-90 60 60)" stroke="url(#${id})" style="stroke-dasharray:${CIRC} ${CIRC};stroke-dashoffset:${CIRC};opacity:0"/>
         </svg>
         <span class="ringw-c"><span class="ringw-pct">–</span><span class="ringw-sub"></span></span>
       </span>
@@ -258,7 +312,17 @@
       const rv = $('.rv', w);
       rv.style.strokeDashoffset = String(CIRC * (1 - p));
       rv.style.opacity = p > 0 ? '1' : '0';
-      rv.style.stroke = ringColor(m, v);
+      const g = ringGrad(m, v);
+      $('.g0', w).setAttribute('stop-color', g[0]); $('.g1', w).setAttribute('stop-color', g[1]);
+      const tg = $('.rtgt', w);
+      if (tg) {
+        const t = strainTargetInfo();
+        if (t) {
+          const a = (t.low / 21) * CIRC, b = (t.high / 21) * CIRC;
+          tg.style.strokeDasharray = `${(b - a).toFixed(2)} ${CIRC.toFixed(2)}`; tg.style.strokeDashoffset = String(-a); tg.style.opacity = '1';
+          w.dataset.target = `${t.low}-${t.high}`;
+        } else { tg.style.opacity = '0'; delete w.dataset.target; }
+      }
       const pct = ringPct(m, v);
       $('.ringw-pct', w).textContent = pct === null ? '–' : pct + '%';
       $('.ringw-sub', w).textContent = ringSub(m, v, false);
@@ -282,7 +346,7 @@
     const days = last7();
     let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.label)}">`;
     vals.forEach((v, i) => {
-      const x = left + slot * i + (slot - bw) / 2, isToday = i === n - 1;
+      const x = left + slot * i + (slot - bw) / 2, isToday = i === n - 1, isRealToday = isToday && isTodayKey(dayKey(days[i]));
       if (v) {
         const h = Math.max(4, (v / max) * ih), y = H - bottom - h;
         s += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="6" fill="${o.colorFn ? o.colorFn(v) : o.color}" opacity="${isToday ? 1 : 0.55}"/>`;
@@ -291,7 +355,7 @@
         s += `<rect x="${x.toFixed(1)}" y="${H - bottom - 3}" width="${bw.toFixed(1)}" height="3" rx="1.5" fill="#e4e7ec"/>`;
       }
       const lbl = days[i].toLocaleDateString([], { weekday: 'short' }).slice(0, 3);
-      s += `<text x="${(left + slot * i + slot / 2).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="11" font-weight="${isToday ? 800 : 500}" fill="${isToday ? '#0f1115' : '#98a2b3'}">${isToday ? 'Today' : esc(lbl)}</text>`;
+      s += `<text x="${(left + slot * i + slot / 2).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="11" font-weight="${isToday ? 800 : 500}" fill="${isToday ? '#0f1115' : '#98a2b3'}">${isRealToday ? 'Today' : esc(lbl)}</text>`;
     });
     if (o.goal) {
       const gy = H - bottom - (o.goal / max) * ih;
@@ -315,7 +379,7 @@
   // ---------- insights (rule-based, only from entered data) ----------
   function avg(a) { return a.length ? a.reduce((x, y) => x + y, 0) / a.length : null; }
   function priorVals(f, n = 7) {
-    const out = [], base = new Date(); base.setHours(12, 0, 0, 0);
+    const out = [], base = keyDate(viewKey());
     for (let i = 1; i <= n; i++) { const d = new Date(base); d.setDate(base.getDate() - i); const v = getVal(f, dayKey(d)); if (v !== null) out.push(v); }
     return out;
   }
@@ -336,15 +400,15 @@
     }
     if (sh !== null) {
       const diff = goal - sh;
-      if (diff >= 1) list.push({ t: 'warn', m: `You slept ${fmtHours(sh)}, ${fmtHours(diff)} short of your ${fmtHours(goal)} target. An earlier night could help.` });
-      else if (diff > 0) list.push({ t: 'info', m: `You slept ${fmtHours(sh)}, just under your ${fmtHours(goal)} target.` });
-      else list.push({ t: 'good', m: `You slept ${fmtHours(sh)}, meeting your ${fmtHours(goal)} target.` });
+      if (diff >= 1) list.push({ t: 'warn', m: `You slept ${fmtHours(sh)}, ${fmtHours(diff)} short of your ${fmtHours(goal)} sleep need. An earlier night could help.` });
+      else if (diff > 0) list.push({ t: 'info', m: `You slept ${fmtHours(sh)}, just under your ${fmtHours(goal)} sleep need.` });
+      else list.push({ t: 'good', m: `You slept ${fmtHours(sh)}, meeting your ${fmtHours(goal)} sleep need.` });
     }
-    if (sq !== null && sq < 70) list.push({ t: 'warn', m: `Sleep quality was ${sq}%. A consistent bedtime and less screen time before bed often help.` });
+    if (sq !== null && sq < 60) list.push({ t: 'warn', m: `Sleep score was ${sq} (poor). See the Sleep tab for what affected it and tips for tonight.` });
     const psh = priorVals('sleepHours');
     if (psh.length >= 3) {
       const a = avg(psh);
-      if (a < goal - 0.5) list.push({ t: 'info', m: `Your average over the previous ${psh.length} nights is ${fmtHours(a)}, below your ${fmtHours(goal)} target.` });
+      if (a < goal - 0.5) list.push({ t: 'info', m: `Your average over the previous ${psh.length} nights is ${fmtHours(a)}, below your ${fmtHours(goal)} sleep need.` });
     }
     if (rhr !== null) {
       const p = priorVals('rhr');
@@ -354,11 +418,11 @@
       const p = priorVals('hrv');
       if (p.length >= 3 && hrv <= avg(p) * 0.85) list.push({ t: 'warn', m: `HRV is ${hrv} ms, lower than your recent average of ${Math.round(avg(p))} ms.` });
     }
-    const since = Date.now() - 7 * 864e5;
-    const wk = allWorkouts().filter((w) => w.ts >= since);
+    const until = keyDate(viewKey()).getTime() + 12 * 36e5, since = until - 7 * 864e5;
+    const wk = allWorkouts().filter((w) => w.ts >= since && w.ts < until);
     if (wk.length) {
       const mins = wk.reduce((a, w) => a + w.duration, 0);
-      list.push({ t: 'info', m: `${wk.length} workout${wk.length > 1 ? 's' : ''} (${mins} min) logged in the last 7 days.` });
+      list.push({ t: 'info', m: `${wk.length} workout${wk.length > 1 ? 's' : ''} (${mins} min) recorded in the 7 days to ${isTodayKey(viewKey()) ? 'today' : dateStr(keyDate(viewKey()))}.` });
     } else list.push({ t: 'info', m: 'No workouts in the last 7 days.' });
     const recInfo = metric('recovery').info;
     if (rec === null && recInfo && recInfo.calibrating) list.push({ t: 'info', m: `Recovery is calibrating: it needs HRV from at least ${recInfo.need} previous days (currently ${recInfo.hrvDays}).` });
@@ -369,7 +433,15 @@
   // ---------- render ----------
   function render() {
     refreshSync();
-    $$('[data-date]').forEach((el) => { el.textContent = longDate(); });
+    if (VIEW && (VIEW >= dayKey())) VIEW = null;
+    const vk = viewKey(), vd = keyDate(vk);
+    const dlabel = `${isTodayKey(vk) ? 'Today' : vd.toLocaleDateString([], { weekday: 'long' })}, ${vd.getDate()} ${vd.toLocaleDateString([], { month: 'long' })}`;
+    $$('[data-date]').forEach((el) => { el.textContent = dlabel; });
+    $$('[data-viewbar]').forEach((el) => {
+      el.hidden = !VIEW;
+      el.innerHTML = VIEW ? `<span>Viewing ${esc(longDate(vd))} · history, read-only</span><button type="button" class="linkbtn" data-today>Back to today</button>` : '';
+    });
+    document.body.classList.toggle('viewing-past', !!VIEW);
     renderSyncUI();
     fillHistory();
     updateRings();
@@ -399,14 +471,14 @@
       <span class="t-sub">${esc(sub)}</span>${!empty ? srcBadge(src) : ''}</button>`;
   }
   function renderToday() {
-    const today = workoutsFor(dayKey());
+    const isT = isTodayKey(viewKey()), today = workoutsFor(viewKey());
     const mins = today.reduce((a, w) => a + w.duration, 0);
     const shM = metric('sleepHours'), rhrM = metric('rhr'), stM = metric('steps');
     const sh = shM.v, rhr = rhrM.v, steps = stM.v;
     $('#glance').innerHTML =
-      tile('Workouts today', today.length ? String(today.length) : null, today.length ? ` · ${mins} min` : '', today.length ? today.map((w) => actInfo(w).label).slice(0, 2).join(', ') : 'None yet', 'fitness') +
-      tile('Sleep', sh !== null ? fmtHours(sh) : null, '', sh !== null ? `target ${fmtHours(sleepGoal())}` : 'No sleep recorded yet', 'sleep', shM.src) +
-      tile('Resting HR', rhr !== null ? String(rhr) : null, 'bpm', rhr !== null ? 'today' : 'Not recorded yet', 'health', rhrM.src) +
+      tile(isT ? 'Workouts today' : 'Workouts', today.length ? String(today.length) : null, today.length ? ` · ${mins} min` : '', today.length ? today.map((w) => actInfo(w).label).slice(0, 2).join(', ') : 'None yet', 'fitness') +
+      tile('Sleep', sh !== null ? fmtHours(sh) : null, '', sh !== null ? `need ${fmtHours(sleepGoal())}` : missingReason('sleep'), 'sleep', shM.src) +
+      tile('Resting HR', rhr !== null ? String(rhr) : null, 'bpm', rhr !== null ? (isT ? 'today' : 'that day') : 'Not recorded', 'health', rhrM.src) +
       tile('Steps', steps !== null ? steps.toLocaleString() : null, '', steps !== null ? `of ${stepTargetInfo().value.toLocaleString()} target` : 'Not recorded yet', 'health', stM.src);
     $('#insights').innerHTML = insights().map((i) => `<li class="${i.t}"><span class="ind" aria-hidden="true"></span><span>${esc(i.m)}</span></li>`).join('');
   }
@@ -430,20 +502,21 @@
   function renderFitness() {
     const s = getVal('strain');
     $('#fit-strain').innerHTML = s === null ? '–' : `${s.toFixed(1)}<span class="muted"> / 21</span>`;
-    const sm = metric('strain'), azmT = SYNC && SYNC.series && SYNC.series.azm && SYNC.series.azm[dayKey()];
+    const sm = metric('strain'), azmT = SYNC && SYNC.series && SYNC.series.azm && SYNC.series.azm[viewKey()];
     const tgt = strainTargetInfo();
-    let fsub = (s === null ? missingReason('strain') : `${ringPct('strain', s)}% of max · builds through the day`) + (tgt ? ` · target ${fmtBand(tgt)}` : '');
+    let fsub = (s === null ? missingReason('strain') : `${ringPct('strain', s)}% of 21${isTodayKey(viewKey()) ? ' · builds through the day' : ''}`) + (tgt ? ` · target ${fmtBand(tgt)} (${tgt.zone} recovery)` : '');
     if (sm.src === 'calc' && sm.info) fsub += ` · load ${sm.info.trimp}`;
     if (azmT) fsub += ` · ${azmT.total} AZM`;
     $('#fit-strain-sub').textContent = fsub;
-    const tk = dayKey();
+    const tk = viewKey();
     const today = workoutsFor(tk);
+    $('#fit-today-h').textContent = isTodayKey(tk) ? "Today's workouts" : `Workouts · ${dateStr(keyDate(tk))}`;
     const cutoff = Date.now() - 14 * 864e5;
     const recent = allWorkouts().filter((w) => dayKey(new Date(w.ts)) !== tk && w.ts >= cutoff).sort((a, b) => b.ts - a.ts).slice(0, 20);
-    $('#today-list').innerHTML = today.length ? today.map((w) => liHTML(w, false)).join('') : '<li class="empty">No workouts recorded today</li>';
+    $('#today-list').innerHTML = today.length ? today.map((w) => liHTML(w, false)).join('') : `<li class="empty">No workouts recorded ${isTodayKey(tk) ? 'today' : 'that day'}</li>`;
     $('#recent-list').innerHTML = recent.length ? recent.map((w) => liHTML(w, true)).join('') : '<li class="empty">No workouts in the last 14 days</li>';
     const mins = today.reduce((a, w) => a + w.duration, 0);
-    $('#today-total').textContent = today.length ? `${today.length} today · ${mins} min` : '';
+    $('#today-total').textContent = today.length ? `${today.length} · ${mins} min` : '';
     const vals = last7().map((d) => workoutsFor(dayKey(d)).reduce((a, w) => a + w.duration, 0));
     const tot = vals.reduce((a, b) => a + b, 0);
     const n = last7().reduce((a, d) => a + workoutsFor(dayKey(d)).length, 0);
@@ -453,33 +526,102 @@
     $('#strain-avg').textContent = sg.length ? `avg ${(avg(sg)).toFixed(1)}` : 'No data yet';
     $('#strain-chart').innerHTML = barChart(sv.map((v) => v || 0), { color: COL.strain, fmt: (v) => v.toFixed(1), label: 'Strain per day, last 7 days' });
   }
+  // Hypnogram: last night's stage segments from Google Health (Awake / REM / Light / Deep rows).
+  function hypnogramSVG(sl) {
+    const segs = sl && sl.segs;
+    if (!segs || !segs.length) return '';
+    const ROW = { W: 0, R: 1, L: 2, A: 2, S: 2, D: 3 };
+    const C = { W: STAGE_COL.awake, R: STAGE_COL.rem, L: STAGE_COL.light, A: STAGE_COL.light, S: STAGE_COL.light, D: STAGE_COL.deep };
+    const W = 340, left = 46, right = 8, top = 6, rowH = 28, bh = 14, H = top + rowH * 4 + 26;
+    const total = Math.max(...segs.map((g) => g[1] + g[2])) || 1;
+    const x = (m) => left + (m / total) * (W - left - right), yc = (r) => top + r * rowH + rowH / 2;
+    let out = `<svg class="hypno" viewBox="0 0 ${W} ${H}" role="img" aria-label="Sleep stages timeline">`;
+    ['Awake', 'REM', 'Light', 'Deep'].forEach((l, r) => {
+      out += `<line x1="${left}" x2="${W - right}" y1="${yc(r)}" y2="${yc(r)}" stroke="#eef0f3" stroke-width="1"/>`;
+      out += `<text x="0" y="${yc(r) + 4}" font-size="11" font-weight="600" fill="#667085">${l}</text>`;
+    });
+    for (let i = 1; i < segs.length; i++) {
+      const a = segs[i - 1], b = segs[i];
+      out += `<line x1="${x(b[1]).toFixed(1)}" x2="${x(b[1]).toFixed(1)}" y1="${yc(ROW[a[0]])}" y2="${yc(ROW[b[0]])}" stroke="#d0d5dd" stroke-width="1"/>`;
+    }
+    segs.forEach((g) => {
+      const x0 = x(g[1]), w = Math.max(1.5, x(g[1] + g[2]) - x0);
+      out += `<rect class="hseg hseg-${g[0]}" x="${x0.toFixed(1)}" y="${(yc(ROW[g[0]]) - bh / 2).toFixed(1)}" width="${w.toFixed(1)}" height="${bh}" rx="3" fill="${C[g[0]]}"/>`;
+    });
+    if (sl.startMs) {
+      const start = new Date(sl.startMs), first = new Date(start); first.setMinutes(0, 0, 0); first.setHours(first.getHours() + 1);
+      const step = total > 420 ? 2 : 1, yT = H - 6;
+      out += `<text x="${left}" y="${yT}" font-size="10.5" font-weight="700" fill="#344054">${esc(hhmm(sl.startMs))}</text>`;
+      out += `<text x="${W - right}" y="${yT}" text-anchor="end" font-size="10.5" font-weight="700" fill="#344054">${esc(hhmm(sl.startMs + total * 60000))}</text>`;
+      for (let t = first.getTime(); t < sl.startMs + total * 60000; t += 36e5) {
+        const m = (t - sl.startMs) / 60000, d = new Date(t);
+        if (d.getHours() % step || m < 50 || total - m < 80) continue;
+        out += `<text x="${x(m).toFixed(1)}" y="${yT}" text-anchor="middle" font-size="10.5" fill="#98a2b3">${pad(d.getHours())}:00</text>`;
+      }
+    }
+    return out + '</svg>';
+  }
+  function lateWorkoutFor(sl) {
+    if (!sl || !sl.startMs) return null;
+    let best = null;
+    allWorkouts().forEach((w) => {
+      const end = w.ts + w.duration * 60000, before = (sl.startMs - end) / 60000;
+      if (w.duration >= 20 && before >= -30 && before <= 180 && (!best || before < best.minutesBeforeBed)) best = { minutesBeforeBed: Math.round(before), label: actInfo(w).label };
+    });
+    return best;
+  }
   function renderSleep() {
-    const h = getVal('sleepHours'), q = getVal('sleep'), gi = sleepTargetInfo(), goal = gi.value, gl = `${fmtHours(goal)} target${gi.source === 'default' ? ' (default)' : ''}`;
+    const k = viewKey(), isT = isTodayKey(k), PM = window.PulseMetrics;
+    const h = getVal('sleepHours'), q = getVal('sleep'), need = sleepTargetInfo(), goal = need.value;
     const bed = getStr('bedtime'), wake = getStr('wake');
+    $('#sl-label').textContent = isT ? 'Last night' : `Night to ${dateStr(keyDate(k))}`;
     $('#sl-hours').textContent = h === null ? '–' : fmtHours(h);
     let sub;
-    if (h === null) sub = `${missingReason('sleep')} · ${gl}`;
+    if (h === null) sub = `${missingReason('sleep')} · need ${fmtHours(goal)}`;
     else {
       const d = h - goal;
-      sub = (bed && wake ? `${bed} → ${wake} · ` : '') + (d >= 0 ? `${gl} met` : `${fmtHours(-d)} under ${gl}`);
+      sub = (bed && wake ? `${bed} → ${wake} · ` : '') + (d >= 0 ? `need of ${fmtHours(goal)} met` : `${fmtHours(-d)} under your ${fmtHours(goal)} need`);
     }
-    if (q !== null) sub += ` · quality ${q}%`;
+    if (q !== null) sub += ` · score ${q} (${sleepBand(q).toLowerCase()})`;
     $('#sl-sub').textContent = sub;
-    const hm = metric('sleepHours');
-    $('#sl-src').innerHTML = srcBadge(hm.src);
-    const sl = syncedSleep(dayKey());
-    const box = $('#sl-stages');
-    if (sl && sl.stages && sl.minutesAsleep) {
-      const st = sl.stages, total = st.deep + st.light + st.rem + st.awake || 1;
-      const segs = [['Deep', st.deep, '#3f2fb3'], ['Light', st.light, '#9d8cf5'], ['REM', st.rem, '#22b8cf'], ['Awake', st.awake, '#f79009']];
-      box.innerHTML = `<div class="stagebar">${segs.map(([n, v, c]) => `<span style="width:${(v / total) * 100}%;background:${c}" title="${n}"></span>`).join('')}</div>
-        <div class="stage-legend">${segs.map(([n, v, c]) => `<span><i style="background:${c}"></i>${n} <b>${fmtHours(v / 60)}</b></span>`).join('')}</div>
-        <p class="muted small" style="margin:10px 0 0">Efficiency ${sl.efficiency}% · ${Math.round(((st.deep + st.rem) / sl.minutesAsleep) * 100)}% deep + REM</p>`;
+    $('#sl-src').innerHTML = srcBadge(metric('sleepHours').src);
+    const sl = syncedSleep(k), box = $('#sl-stages'), ex = $('#sl-explain'), tipsBox = $('#sl-tips');
+    const an = PM && sl ? PM.stageAnalysis(sl) : null;
+    if (sl && an) {
+      const hyp = hypnogramSVG(sl);
+      const CHIP = { ok: ['ok', 'In range'], low: ['low', 'Below typical'], high: ['high', 'Above typical'] };
+      const rows = an.map((a) => {
+        const c = STAGE_COL[a.key], sc = 70, pos = (v) => clamp((v / sc) * 100, 0, 100);
+        const chip = a.key === 'awake' && a.status === 'high' ? ['high', 'Above ~10%'] : CHIP[a.status];
+        return `<div class="stg-row" data-stage="${a.key}">
+          <div class="stg-top"><span><i style="background:${c}"></i><b>${a.label}</b></span><span class="stg-val">${fmtHours(a.min / 60)} · <b>${a.pct}%</b></span></div>
+          <div class="stg-bar"><span class="stg-norm" style="left:${pos(a.lo)}%;width:${pos(a.hi) - pos(a.lo)}%"></span><span class="stg-mark" style="left:${pos(a.pct)}%;background:${c}"></span></div>
+          <div class="stg-foot"><span>Typical ${a.key === 'awake' ? 'under 10% of time in bed' : `${a.lo}–${a.hi}% of sleep`}</span><span class="chip-s ${chip[0]}">${chip[1]}</span></div>
+        </div>`;
+      }).join('');
+      box.innerHTML = `<div class="card-head"><h2>Sleep stages</h2><span class="muted small">${sl.bedtime && sl.wake ? `${esc(sl.bedtime)} → ${esc(sl.wake)}` : ''}</span></div>
+        ${hyp || '<p class="muted small" id="sl-nohyp">A stage timeline isn\u2019t available for this night, only totals.</p>'}
+        ${hyp ? `<div class="stage-legend">${[['Awake', 'awake'], ['REM', 'rem'], ['Light', 'light'], ['Deep', 'deep']].map(([n, kk]) => `<span><i style="background:${STAGE_COL[kk]}"></i>${n}</span>`).join('')}</div>` : ''}
+        <div class="stg-list">${rows}</div>
+        <p class="muted small" style="margin:10px 0 0">Efficiency ${sl.efficiency}%${sl.awakenings ? ` · ${sl.awakenings} awakenings` : ''}${isNum(sl.latency) ? ` · ${sl.latency} min to fall asleep` : ''}. Typical ranges are for healthy adults and teens (StatPearls, Google Health); teens often get more deep sleep.</p>`;
       box.hidden = false;
-    } else { box.hidden = true; box.innerHTML = ''; }
+      ex.innerHTML = `<div class="card-head"><h2>What your stages mean today</h2></div>` + an.map((a) => {
+        const n = PM.stageNote(a, sl);
+        return `<div class="note" data-note="${a.key}"><div class="note-h"><i style="background:${STAGE_COL[a.key]}"></i><b>${a.label}${a.key === 'awake' ? ' time' : ' sleep'}</b></div><p>${esc(n.today)}</p><p class="muted small">${esc(n.what)}</p></div>`;
+      }).join('') + `<p class="disclaimer">Wearable stage estimates are approximate. General information, not medical advice. Sources: ${srcLink('statpearls')}, ${srcLink('ghStages')}, ${srcLink('vancauter')}, ${srcLink('walker')}.</p>`;
+      ex.hidden = false;
+    } else {
+      box.hidden = !sl; ex.hidden = true; ex.innerHTML = '';
+      box.innerHTML = sl ? `<div class="card-head"><h2>Sleep stages</h2></div><p class="muted small">Google Health didn't record sleep stages for this night (it needs a longer sleep with a good fit), so only the total is shown.</p>` : '';
+    }
+    if (sl && PM) {
+      const tips = PM.sleepTips({ sleep: sl, need: goal, timing: PM.timingDeviation(k, ser('sleep')), lateWorkout: lateWorkoutFor(sl) });
+      tipsBox.innerHTML = `<div class="card-head"><h2>Tips for tonight</h2></div><ol class="tips">${tips.map((t) => `<li data-tip="${t.id}"><b>${esc(t.title)}</b><span>${esc(t.text)}</span>${srcLink(t.src)}</li>`).join('')}</ol><p class="disclaimer">Based on your Google Health data. General guidance, not medical advice.</p>`;
+      tipsBox.hidden = false;
+    } else { tipsBox.hidden = true; tipsBox.innerHTML = ''; }
     const vals = last7().map((d) => getVal('sleepHours', dayKey(d)));
     const got = vals.filter((v) => v !== null);
-    $('#sleep-avg').textContent = (got.length ? `avg ${fmtHours(avg(got))} · ` : '') + `target ${fmtHours(goal)}`;
+    $('#sleep-avg').textContent = (got.length ? `avg ${fmtHours(avg(got))} · ` : '') + `need ${fmtHours(goal)}`;
     $('#sleep-chart').innerHTML = barChart(vals.map((v) => v || 0), { color: COL.sleep, goal, fmt: (v) => (Math.round(v * 10) / 10) + 'h', label: 'Sleep hours per night, last 7 days' });
   }
   function renderHealth() {
@@ -574,33 +716,60 @@
     const on = (id, fn) => { const el = $('#' + id); if (el) el.addEventListener('click', fn); };
     on('set-connect', startConnect);
     on('set-sync', () => doSync(true));
-    on('set-disc', () => { PS.disconnect(); PS.clearCache(); SCORES = { v: 1, days: {} }; scoresDirty = true; saveScores(); toast('Disconnected · synced data removed from this device'); render(); openSettings(); });
+    on('set-disc', () => { PS.disconnect(); PS.clearCache(); SCORES = { v: 2, days: {} }; scoresDirty = true; saveScores(); toast('Disconnected · synced data removed from this device'); render(); openSettings(); });
   }
 
   function openExplainer() {
-    const k = dayKey(), s = metric('strain'), r = metric('recovery'), q = metric('sleep');
+    const k = viewKey(), s = metric('strain'), r = metric('recovery'), q = metric('sleep');
     const z = SYNC && SYNC.series && SYNC.series.zones && SYNC.series.zones[k];
-    const line = (m, fn) => (m.src === 'calc' && m.info && m.info.parts !== undefined || (m.src === 'calc' && m.info && m.info.trimp !== undefined) ? `<p class="calc-today">${fn(m.info)}</p>` : '');
+    const has = (m) => m.src === 'calc' && m.info;
+    const line = (m, fn) => (has(m) ? `<p class="calc-today">${fn(m.info)}</p>` : '');
+    const src = (...ids) => `<p class="srcs">Sources: ${ids.map(srcLink).join(' · ')}</p>`;
+    const nd = sleepTargetInfo(), tg = strainTargetInfo(), stp = stepTargetInfo();
     openSheet(`
       <h2 id="sheet-title">How scores are calculated</h2>
-      <p class="sheet-sub">Scores are always calculated from your Google Health data and refresh automatically during the day. Missing data shows "–" with the reason. Strain builds up through the day; Recovery and Sleep are set once last night's sleep and this morning's HRV/RHR arrive, and only change if Google Health delivers new data for them.</p>
-      <h3>Strain (0–21)</h3>
-      <p class="calc">Heart-rate load (TRIMP) from minutes in Google Health heart-rate zones:<br><code>load = 1×light + 2×moderate + 3×vigorous + 4×peak</code><br><code>strain = 21 × ln(1 + load/25) ÷ ln(1 + 600/25)</code>, max 21.<br>Logarithmic like WHOOP: the first minutes of effort add the most. If zone minutes are unavailable, Active Zone Minutes are used (fat-burn×2, cardio/peak AZM×1.5/×2).</p>
-      ${line(s, (i) => `Today: load ${i.trimp}${z ? ` (light ${z.light}, moderate ${z.moderate}, vigorous ${z.vigorous}, peak ${z.peak} min)` : ''} → strain ${i.value}.`)}
-      <h3>Recovery (%)</h3>
-      <p class="calc">Compares today with your own baseline from the previous 30 days:<br><code>HRV score = 60 + 20 × z</code>, z = (ln HRV today − mean ln HRV) ÷ SD<br><code>RHR score = 60 + 20 × z</code>, z = (mean RHR − RHR today) ÷ SD<br><code>sleep score = hours asleep ÷ goal × 100</code><br><code>recovery = 0.6×HRV + 0.2×RHR + 0.2×sleep</code> (each 0–100; weights re-balanced if a part is missing).<br>Shows "Calibrating" until at least 4 previous days of HRV exist. Green ≥ 67, yellow 34–66, red &lt; 34.</p>
-      ${line(r, (i) => `Today: HRV ${i.parts.hrv}${i.parts.rhr !== undefined ? `, RHR ${i.parts.rhr}` : ''}${i.parts.sleep !== undefined ? `, sleep ${i.parts.sleep}` : ''} → ${i.value}% (baseline HRV ${i.baseline.hrv} ms over ${i.hrvDays} days).`)}
+      <p class="sheet-sub">Everything is calculated automatically from your Google Health data. Google's own Readiness, Sleep score and Cardio load aren't available through the Google Health API, so Pulse calculates its own, calibrated so an ordinary day lands in the middle and 90+ takes an exceptional day. Scores are capped at 99, like WHOOP.</p>
+      <h3>Recovery (1–99%)</h3>
+      <p class="calc">Compares this morning with your own previous 30 days. Each signal becomes a z-score (how unusual today is for you) and goes through a curve where an average day is about 57%:<br><code>part = 100 ÷ (1 + e^−(0.3 + z))</code> → z 0 = 57, +1 = 79, +2 = 91, −1 = 33, −2 = 15<br>HRV (log scale) 55% · resting HR (lower is better) 20% · last night's sleep score 20% · breathing rate 5%.<br>Needs 4 previous days of HRV ("Calibrating" before that). Green 67–99, yellow 34–66, red 1–33. On an ordinary day expect about 55–75%.</p>
+      ${line(r, (i) => `Today: HRV ${i.parts.hrv} (z ${i.z && i.z.hrv})${i.parts.rhr !== undefined ? `, RHR ${i.parts.rhr}` : ''}${i.parts.sleep !== undefined ? `, sleep ${i.parts.sleep}` : ''}${i.parts.resp !== undefined ? `, breathing ${i.parts.resp}` : ''} → ${i.value}% (baseline HRV ${i.baseline.hrv} ms, ${i.hrvDays} days).`)}
       ${r.v === null && r.info && r.info.calibrating ? `<p class="calc-today">Today: calibrating (${r.info.hrvDays}/${r.info.need} days of HRV).</p>` : ''}
-      <h3>Sleep quality (%)</h3>
-      <p class="calc">The Google Health API does not provide a sleep score, so Pulse uses:<br><code>0.5×efficiency + 0.3×duration + 0.2×restorative</code><br>efficiency = time asleep ÷ time in bed; duration = hours asleep ÷ goal (max 100); restorative = (deep + REM) share ÷ 40% (max 100). Without stages: 0.6×efficiency + 0.4×duration.</p>
-      ${line(q, (i) => `Today: efficiency ${i.parts.efficiency}, duration ${i.parts.duration}${i.parts.restorative !== undefined ? `, restorative ${i.parts.restorative}` : ''} → ${i.value}%.`)}
+      ${src('whoopRec', 'whoopAvg', 'oura', 'ghReady', 'plews', 'buchheit')}
+      <h3>Strain (0–21)</h3>
+      <p class="calc">Heart-rate load from minutes in Google Health's heart-rate zones (Edwards-style TRIMP):<br><code>load = 0.5×light + 2×moderate + 3.5×vigorous + 5×peak</code><br><code>strain = 4.35 × ln(1 + load ÷ 10)</code>, max 21 (logarithmic, like WHOOP).<br>Roughly: normal day 6–9 · training 12–14 · football match or hard padel 14–16 · 18+ only for very long, hard days. The ring shows strain as a share of 21.</p>
+      ${line(s, (i) => `Today: load ${i.trimp}${z ? ` (light ${z.light}, moderate ${z.moderate}, vigorous ${z.vigorous}, peak ${z.peak} min)` : ''} → strain ${i.value}.`)}
+      ${src('whoopStrain', 'edwards')}
+      <h3>Sleep score (1–99)</h3>
+      <p class="calc">Duration vs your sleep need 45% · deep sleep 12.5% · REM 12.5% · awake time 20% · bed/wake consistency 10%.<br>Duration scores 100 when you meet your need and drops faster the shorter you sleep. Deep scores 100 at 20%+ of sleep, REM at 23%+, and awake time at 8% or less of time in bed. Consistency scores 100 within 30 min of your usual bed and wake times.<br>Bands like Google's: 90+ excellent, 80–89 good, 60–79 fair, under 60 poor. Most nights land around 70–85.</p>
+      ${line(q, (i) => `Today: duration ${i.parts.duration}${i.parts.deep !== undefined ? `, deep ${i.parts.deep}, REM ${i.parts.rem}` : ''}${i.parts.awake !== undefined ? `, awake ${i.parts.awake}` : ''}${i.parts.consistency !== undefined ? `, consistency ${i.parts.consistency}` : ''} → ${i.value}.`)}
+      ${src('ghSleep', 'statpearls', 'ghStages', 'ohayon', 'whoopNeed')}
       <h3>Targets (automatic)</h3>
-      <p class="calc">The Google Health API does not share your app goals, so targets come from your own data:<br><b>Sleep target</b> = average time asleep over the previous 14 nights, kept within 7–9 h (8 h default until 7 nights exist).<br><b>Step target</b> = average of the previous 30 days, rounded to 500 (10,000 default until 7 days exist).<br><b>Strain target</b> = 6 + 0.1 × today's recovery, ±2 (e.g. recovery 100% → 14–18, 50% → 9–13, 0% → 4–8).</p>
-      <p class="calc-today">Today: sleep ${esc(fmtHours(sleepGoal()))} (${esc(targetSrc(sleepTargetInfo()))}) · steps ${stepTargetInfo().value.toLocaleString()} (${esc(targetSrc(stepTargetInfo()))}) · strain ${esc(fmtBand(strainTargetInfo()))}${strainTargetInfo() ? '' : ' (needs today\'s recovery)'}</p>
-      <p class="disclaimer">These are Pulse's own estimates for personal insight, not WHOOP or Fitbit scores and not medical advice.</p>
+      <p class="calc"><b>Sleep need</b> = 8.5 h base (inside the 8–10 h recommended for 13–18 year olds, and WHOOP members average about 8.6 h), + 4 min per strain point above 10 yesterday (max 45), + 25% of your shortfall over the last 3 nights (max 60 min), − naps. Kept between 7 and 11 h.<br><b>Strain target</b> from recovery: red → 5–10, yellow → 10–14, green → 14–17, 90%+ → up to 18. Shown as the hatched part of the strain ring.<br><b>Step target</b> = your 30-day average + 10%, rounded to 500, kept between 6,000 and 12,000 (benefits level off around 8–10k a day; about 10–11.7k matches 60 min of activity for teens). 10,000 until 7 days of data exist.</p>
+      <p class="calc-today">${isTodayKey(k) ? 'Today' : esc(dateStr(keyDate(k)))}: sleep need ${esc(fmtHours(nd.value))} (${esc(needText(nd))}) · strain target ${esc(fmtBand(tg))}${tg ? '' : ' (needs recovery)'} · steps ${stp.value.toLocaleString()} (${esc(targetSrc(stp))})</p>
+      ${src('aasm', 'whoopNeed', 'whoopCoach', 'paluch', 'tudor')}
+      <h3>Sleep stages &amp; tips</h3>
+      <p class="calc">The stage timeline and minutes come straight from Google Health. Typical ranges: deep 13–23%, REM 20–25%, light 50–60% of sleep, awake under ~10% of time in bed. Tips are picked from your own night (short sleep, irregular timing, late hard training, broken or light sleep, slow to fall asleep).</p>
+      ${src('statpearls', 'vancauter', 'walker', 'mah', 'phillips', 'stutz', 'okamoto', 'drake', 'chang')}
+      <p class="disclaimer">These are Pulse's own estimates for personal insight. They aren't WHOOP, Bevel, Oura or Google scores, and they're not medical advice.</p>
       <div class="sheet-actions" style="grid-template-columns:1fr"><button class="btn primary" type="button" id="ex-close">Done</button></div>`);
     $('#ex-close').addEventListener('click', closeSheet);
   }
+
+  // ---------- date switcher (read-only history) ----------
+  function openDatePicker() {
+    const rows = [];
+    for (let i = 0; i < 14; i++) {
+      const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - i);
+      const k = dayKey(d), sv = getVal('sleep', k), rv = getVal('recovery', k), st = getVal('strain', k);
+      rows.push(`<button type="button" class="pick${k === viewKey() ? ' on' : ''}" data-pick="${k}">
+        <span class="pick-d">${i === 0 ? 'Today' : i === 1 ? 'Yesterday' : esc(d.toLocaleDateString([], { weekday: 'short' }))}<small>${esc(d.toLocaleDateString([], { day: 'numeric', month: 'long' }))}</small></span>
+        <span class="pick-s"><i class="ps-st">${st === null ? '–' : ringPct('strain', st) + '%'}</i><i class="ps-rec">${rv === null ? '–' : rv + '%'}</i><i class="ps-sl">${sv === null ? '–' : sv + '%'}</i></span>
+      </button>`);
+    }
+    openSheet(`<h2 id="sheet-title">Choose a day</h2>
+      <p class="sheet-sub">Past days are read-only, from your saved scores and synced Google Health data. <span class="pick-key"><i class="ps-st">Strain</i><i class="ps-rec">Recovery</i><i class="ps-sl">Sleep</i></span></p>
+      <div class="picks">${rows.join('')}</div>`);
+  }
+  function setView(k) { VIEW = !k || k >= dayKey() ? null : k; render(); replayRings($('#tab-' + currentTab)); }
 
   // ---------- tabs ----------
   const TABS = ['today', 'fitness', 'sleep', 'health'];
@@ -643,34 +812,35 @@
     return last7().slice().reverse().map((d) => { const k = dayKey(d), v = getVal(m, k); return row(k === dayKey() ? 'Today' : d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' }), v === null ? null : m === 'strain' ? v.toFixed(1) : v + '%'); }).join('');
   }
   function openScoreDetail(m) {
-    const k = dayKey(), mt = metric(m), v = mt.v, i = mt.info || {}, c = RINGS[m], goal = i.goal || sleepGoal();
+    const k = viewKey(), mt = metric(m), v = mt.v, i = mt.info || {}, c = RINGS[m], goal = i.goal || sleepGoal();
     const big = v === null ? '–' : m === 'strain' ? v.toFixed(1) + ' / 21' : v + '%';
     let inputs = '', how = '';
     if (m === 'strain') {
       const z = ser('zones')[k], a = ser('azm')[k];
       inputs = row('Light zone', z ? z.light + ' min' : null) + row('Moderate zone', z ? z.moderate + ' min' : null) + row('Vigorous zone', z ? z.vigorous + ' min' : null) + row('Peak zone', z ? z.peak + ' min' : null) +
-        row('Active Zone Minutes', a ? a.total : null) + row('Heart-rate load (TRIMP)', i.trimp ?? null) + row('Target today', strainTargetInfo() ? fmtBand(strainTargetInfo()) + ' (from recovery)' : 'needs today\'s recovery') + row('Method', i.method === 'azm' ? 'Active Zone Minutes (no zone minutes)' : i.method ? 'Heart-rate zone minutes' : null);
-      how = 'load = 1×light + 2×moderate + 3×vigorous + 4×peak minutes; strain = 21 × ln(1 + load/25) ÷ ln(25), max 21. Recalculated at every sync, so it builds up through the day.';
+        row('Active Zone Minutes', a ? a.total : null) + row('Heart-rate load (TRIMP)', i.trimp ?? null) + row('Target', strainTargetInfo() ? `${fmtBand(strainTargetInfo())} (${strainTargetInfo().zone} recovery)` : 'needs recovery') + row('Method', i.method === 'azm' ? 'Active Zone Minutes (no zone minutes)' : i.method ? 'Heart-rate zone minutes' : null);
+      how = 'load = 0.5×light + 2×moderate + 3.5×vigorous + 5×peak minutes; strain = 4.35 × ln(1 + load/10), max 21. Normal day ≈ 6–9, training ≈ 12–14, match ≈ 14–16, 18+ rare. Recalculated at every sync, so it builds up through the day.';
     } else if (m === 'recovery') {
       const p = i.parts || {}, b = i.baseline || {};
       inputs = row('HRV today', syncedVal('hrv', k) !== null ? Math.round(syncedVal('hrv', k)) + ' ms' : null) + row('HRV baseline (30 d)', b.hrv ? b.hrv + ' ms' : null) +
         row('Resting HR today', syncedVal('rhr', k) !== null ? syncedVal('rhr', k) + ' bpm' : null) + row('Resting HR baseline', b.rhr ? b.rhr + ' bpm' : null) +
-        row('Sleep last night', syncedVal('sleepHours', k) !== null ? fmtHours(syncedVal('sleepHours', k)) : null) + row('Sleep target', fmtHours(goal)) + row('Days of HRV history', i.hrvDays ?? null) +
-        row('HRV score', p.hrv ?? null) + row('Resting HR score', p.rhr ?? null) + row('Sleep score', p.sleep ?? null);
-      how = 'HRV score = 60 + 20 × z (today vs your 30-day baseline, log scale); RHR score = 60 + 20 × z (lower is better); sleep score = hours ÷ goal. Recovery = 0.6×HRV + 0.2×RHR + 0.2×sleep. Set once per day; recalculated only if new sleep/HRV/RHR data arrives. Needs 4 previous days of HRV.';
+        row('Breathing rate', syncedVal('resp', k) !== null ? syncedVal('resp', k) + ' br/min' : null) + row('Days of HRV history', i.hrvDays ?? null) +
+        row('HRV part', p.hrv !== undefined ? `${p.hrv} (z ${i.z.hrv})` : null) + row('Resting HR part', p.rhr !== undefined ? `${p.rhr} (z ${i.z.rhr})` : null) + row('Sleep score part', p.sleep ?? null) + row('Breathing part', p.resp ?? null);
+      how = 'Each signal vs your previous 30 days as a z-score, through a curve where an average day ≈ 57: part = 100 ÷ (1 + e^−(0.3 + z)). Recovery = 0.55×HRV + 0.20×resting HR + 0.20×sleep score + 0.05×breathing rate, shown 1–99. Set once per day; recalculated only if new data arrives. Needs 4 previous days of HRV.';
     } else {
       const sl = syncedSleep(k), p = i.parts || {};
-      inputs = row('Asleep', sl ? fmtHours(sl.sleepHours) : null) + row('Bedtime → wake', sl && sl.bedtime ? `${sl.bedtime} → ${sl.wake}` : null) + row('Efficiency', sl && isNum(sl.efficiency) ? sl.efficiency + '%' : null) +
-        row('Deep + REM', sl && sl.stages && sl.minutesAsleep ? Math.round(((sl.stages.deep + sl.stages.rem) / sl.minutesAsleep) * 100) + '%' : null) + row('Sleep target', `${fmtHours(goal)} (${sleepTargetInfo().source})`) +
-        row('Efficiency score', p.efficiency ?? null) + row('Duration score', p.duration ?? null) + row('Restorative score', p.restorative ?? null);
-      how = '0.5×efficiency + 0.3×duration + 0.2×restorative (deep+REM share ÷ 40%). Without stages: 0.6×efficiency + 0.4×duration. Uses last night\'s main sleep from Google Health (naps ignored).';
+      const nd = sleepTargetInfo(k), pc = i.pcts || {};
+      inputs = row('Asleep', sl ? fmtHours(sl.sleepHours) : null) + row('Sleep need', `${fmtHours(nd.value)} (${needText(nd)})`) + row('Bedtime → wake', sl && sl.bedtime ? `${sl.bedtime} → ${sl.wake}` : null) +
+        row('Deep / REM / light', pc.deep !== undefined ? `${pc.deep}% / ${pc.rem}% / ${pc.light}%` : null) + row('Awake (of time in bed)', isNum(i.awakePct) ? i.awakePct + '%' : null) + row('Timing vs usual', isNum(i.timingDev) ? `${i.timingDev} min off` : null) +
+        row('Duration part', p.duration ?? null) + row('Deep part', p.deep ?? null) + row('REM part', p.rem ?? null) + row('Awake-time part', p.awake ?? null) + row('Consistency part', p.consistency ?? null);
+      how = 'Duration vs need 45% · deep 12.5% · REM 12.5% · awake time 20% · consistency 10% (missing parts re-balanced), shown 1–99. 90+ excellent, 80–89 good, 60–79 fair, under 60 poor. Uses the main sleep from Google Health; naps lower the next night\'s need.';
     }
     openSheet(`
       <h2 id="sheet-title">${esc(c.title)}</h2>
       <p class="sheet-sub">Calculated automatically from Google Health${mt.at ? ` · calculated ${hhmm(mt.at)}` : ''}${updatedText() ? ` · data ${esc(updatedText().toLowerCase())}` : ''}</p>
       <div class="readout" style="color:${v === null ? '#98a2b3' : ringColor(m, v)}">${esc(big)}</div>
-      <div class="readout-sub">${v === null ? esc(missingReason(m)) : m === 'recovery' ? recZone(v) + ' zone' : m === 'strain' ? ringPct('strain', v) + '% of max' : ''}</div>
-      <h3>Today's inputs</h3><div class="kvs">${inputs}</div>
+      <div class="readout-sub">${v === null ? esc(missingReason(m)) : m === 'recovery' ? recZone(v) + ' zone' : m === 'strain' ? ringPct('strain', v) + '% of 21' : sleepBand(v)}</div>
+      <h3>${isTodayKey(k) ? "Today's inputs" : 'Inputs · ' + esc(dateStr(keyDate(k)))}</h3><div class="kvs">${inputs}</div>
       <h3>How it's calculated</h3><p class="calc">${esc(how)}</p>
       <h3>Last 7 days</h3><div class="kvs">${historyRows(m)}</div>
       <div class="sheet-actions" style="grid-template-columns:1fr 1fr"><button class="btn" type="button" data-explain>All formulas</button><button class="btn primary" type="button" id="sd-close">Done</button></div>`);
@@ -710,10 +880,21 @@
     ctx.save();
     ctx.lineWidth = lw; ctx.lineCap = 'round';
     ctx.strokeStyle = COL.track; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
-    const p = v === null ? 0 : clamp(v / RINGS[m].max, 0, 1);
+    const p = v === null ? 0 : clamp(v / RINGS[m].max, 0, 1), A0 = -Math.PI / 2;
+    const tgt = m === 'strain' ? strainTargetInfo() : null;
+    if (tgt) { // hatched target zone on the track
+      const pc = document.createElement('canvas'); pc.width = pc.height = 12;
+      const px = pc.getContext('2d'); px.fillStyle = 'rgba(255,138,0,0.14)'; px.fillRect(0, 0, 12, 12);
+      px.strokeStyle = 'rgba(232,110,0,0.65)'; px.lineWidth = 3.5; px.beginPath();
+      [-12, 0, 12].forEach((o) => { px.moveTo(o, 12); px.lineTo(o + 12, 0); }); px.stroke();
+      ctx.save(); ctx.lineCap = 'butt'; ctx.strokeStyle = ctx.createPattern(pc, 'repeat');
+      ctx.beginPath(); ctx.arc(cx, cy, r, A0 + (tgt.low / 21) * Math.PI * 2, A0 + (tgt.high / 21) * Math.PI * 2); ctx.stroke(); ctx.restore();
+    }
     if (p > 0) {
-      ctx.strokeStyle = ringColor(m, v);
-      ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(p, 0.9999)); ctx.stroke();
+      const g = ringGrad(m, v), lg = ctx.createLinearGradient(cx - r, cy - r, cx + r, cy + r);
+      lg.addColorStop(0, g[0]); lg.addColorStop(1, g[1]);
+      ctx.strokeStyle = lg;
+      ctx.beginPath(); ctx.arc(cx, cy, r, A0, A0 + Math.PI * 2 * Math.min(p, 0.9999)); ctx.stroke();
     }
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = v === null ? COL.faint : COL.text;
@@ -738,7 +919,10 @@
       ctx.fillStyle = '#ffffff'; roundRect(ctx, 1, 1, W - 2, H - 2, 44); ctx.fill();
       ctx.strokeStyle = '#e7e9ee'; ctx.lineWidth = 2; ctx.stroke();
     }
-    metrics.forEach((m, i) => drawRing(ctx, padX + cell * i + cell / 2, padY + 124, 110, 24, m, getVal(m), { pct: 60, sub: 24, label: 30 }));
+    metrics.forEach((m, i) => {
+      if (i > 0) { ctx.fillStyle = '#eceef2'; ctx.fillRect(padX + cell * i - 1, padY + 20, 2, 290); }
+      drawRing(ctx, padX + cell * i + cell / 2, padY + 124, 110, 24, m, getVal(m), { pct: 60, sub: 24, label: 30 });
+    });
     return c;
   }
 
@@ -752,7 +936,7 @@
 
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = COL.muted; ctx.font = `700 28px ${FONT}`; ctx.fillText('PULSE · DAILY SUMMARY', 112, 150);
-    ctx.fillStyle = COL.text; ctx.font = `800 60px ${FONT}`; ctx.fillText(longDate(), 112, 224);
+    ctx.fillStyle = COL.text; ctx.font = `800 60px ${FONT}`; ctx.fillText(longDate(keyDate(viewKey())), 112, 224);
 
     RING_ORDER.forEach((m, i) => drawRing(ctx, 256 + i * 284, 430, 108, 26, m, getVal(m), { pct: 56, sub: 24, label: 30 }));
 
@@ -776,12 +960,12 @@
     });
 
     // workouts
-    const today = workoutsFor(dayKey()).slice().reverse();
+    const today = workoutsFor(viewKey()).slice().reverse();
     const mins = today.reduce((a, w) => a + w.duration, 0);
     ctx.fillStyle = COL.muted; ctx.font = `700 26px ${FONT}`;
     ctx.fillText(today.length ? `WORKOUTS · ${mins} MIN` : 'WORKOUTS', 112, 1000);
     if (!today.length) {
-      ctx.fillStyle = COL.faint; ctx.font = `600 32px ${FONT}`; ctx.fillText('None recorded today', 112, 1052);
+      ctx.fillStyle = COL.faint; ctx.font = `600 32px ${FONT}`; ctx.fillText(isTodayKey(viewKey()) ? 'None recorded today' : 'None recorded that day', 112, 1052);
     } else {
       let x = 112, y = 1022, row = 0, shown = 0;
       ctx.font = `700 28px ${FONT}`;
@@ -835,7 +1019,7 @@
   // the PNG itself is passed as a Promise<Blob>).
   function copyRingsImage(metrics, bg) {
     const canvas = ringsCanvas(metrics, bg);
-    const name = `pulse-rings-${dayKey()}.png`;
+    const name = `pulse-rings-${viewKey()}.png`;
     if (clipboardImageSupported()) {
       let item;
       try { item = new ClipboardItem({ 'image/png': canvasBlob(canvas) }); }
@@ -881,8 +1065,8 @@
     $$('[data-copy]', $('#sheet')).forEach((b) => b.addEventListener('click', () => {
       copyRingsImage(b.dataset.copy === 'all' ? RING_ORDER : [b.dataset.copy], cur());
     }));
-    $('#rc-dl').addEventListener('click', () => download(canvasBlobSync(ringsCanvas(RING_ORDER, cur())), `pulse-rings-${dayKey()}.png`));
-    $('#rc-share').addEventListener('click', () => shareOrDownload(canvasBlobSync(ringsCanvas(RING_ORDER, cur())), `pulse-rings-${dayKey()}.png`, 'Pulse rings'));
+    $('#rc-dl').addEventListener('click', () => download(canvasBlobSync(ringsCanvas(RING_ORDER, cur())), `pulse-rings-${viewKey()}.png`));
+    $('#rc-share').addEventListener('click', () => shareOrDownload(canvasBlobSync(ringsCanvas(RING_ORDER, cur())), `pulse-rings-${viewKey()}.png`, 'Pulse rings'));
     paintImg();
   }
 
@@ -901,7 +1085,7 @@
       }).catch(() => {});
     }, 120);
   }
-  const cardName = () => `pulse-${dayKey()}.png`;
+  const cardName = () => `pulse-${viewKey()}.png`;
   $('#btn-download').addEventListener('click', () => download(canvasBlobSync(drawCard()), cardName()));
   $('#btn-share').addEventListener('click', () => shareOrDownload(canvasBlobSync(drawCard()), cardName(), 'Pulse daily summary'));
 
@@ -909,6 +1093,9 @@
   document.addEventListener('click', (e) => {
     const t = e.target;
     if (t.closest('[data-settings]')) { openSettings(); return; }
+    if (t.closest('[data-datepick]')) { openDatePicker(); return; }
+    const pk = t.closest('[data-pick]'); if (pk) { closeSheet(); setView(pk.dataset.pick); return; }
+    if (t.closest('[data-today]')) { setView(null); return; }
     if (t.closest('[data-explain]')) { if (!$('#sheet').hidden) { closeSheet(); setTimeout(openExplainer, 330); } else openExplainer(); return; }
     if (t.closest('#btn-connect')) { startConnect(); return; }
     if (t.closest('#btn-sync-now')) { doSync(true); return; }
@@ -924,7 +1111,7 @@
   let lastKey = dayKey(), lastAuto = 0;
   function autoRefresh(reason) {
     if (document.visibilityState === 'hidden') return 'hidden';
-    if (dayKey() !== lastKey) { lastKey = dayKey(); render(); }
+    if (dayKey() !== lastKey) { lastKey = dayKey(); VIEW = null; render(); }
     if (reason !== 'timer' && Date.now() - lastAuto < 3000) return 'debounced';
     lastAuto = Date.now();
     if (!PS) return 'no-sync';
@@ -983,5 +1170,5 @@
     window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js', { scope: './' }).catch(() => {}); });
   }
 
-  window.__pulse = { drawCard, ringsCanvas, dayKey, migrate, metric, doSync, autoRefresh, scores: () => SCORES };
+  window.__pulse = { drawCard, ringsCanvas, dayKey, migrate, metric, doSync, autoRefresh, scores: () => SCORES, setView, viewKey, sleepNeed: (k) => sleepTargetInfo(k || viewKey()), strainTarget: (k) => strainTargetInfo(k || viewKey()) };
 })();

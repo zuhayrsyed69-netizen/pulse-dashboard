@@ -298,3 +298,45 @@ input[type="range"]::-moz-range-thumb { width: 30px; height: 30px; border-radius
 .kv b { font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
 .sl-detail { margin: -4px 0 14px; }
 .ringw-src:empty { min-height: 0; margin-top: 0; }
+
+/* v5: date switcher, gradient rings with dividers, sleep stages */
+.datebtn { display: inline-flex; align-items: center; gap: 4px; min-height: 40px; margin: 0 0 -6px -2px; padding: 0 8px 0 2px; border: 0; background: none; border-radius: 10px;
+  font-size: 15px; font-weight: 700; color: var(--muted); cursor: pointer; }
+.datebtn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.datebtn:active { background: var(--card-2); }
+body.viewing-past .datebtn { color: var(--accent, #4c3fd6); }
+.viewbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: -4px 0 12px; padding: 6px 6px 6px 14px; border-radius: 14px;
+  background: #eef0ff; color: #3b30a8; font-size: 13px; font-weight: 600; }
+.viewbar .linkbtn { min-height: 40px; white-space: nowrap; }
+.rings-card .rings3 { gap: 0; }
+.rings-card .ringw + .ringw { border-left: 1px solid #eceef2; border-radius: 0; }
+.ringw circle.rtgt { stroke-width: 10; stroke-linecap: butt; transition: opacity .3s ease; }
+.ringw-pct { font-size: 25px; }
+.picks { display: grid; gap: 8px; }
+.pick { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 52px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); text-align: left; cursor: pointer; }
+.pick.on { border-color: #4c3fd6; box-shadow: 0 0 0 2px rgba(76,63,214,.15); }
+.pick-d { display: flex; flex-direction: column; font-weight: 700; font-size: 15px; }
+.pick-d small { font-weight: 500; font-size: 12px; color: var(--muted); }
+.pick-s, .pick-key { display: inline-flex; gap: 6px; }
+.pick-s i, .pick-key i { font-style: normal; font-size: 12px; font-weight: 700; padding: 3px 7px; border-radius: 8px; min-width: 38px; text-align: center; }
+.ps-st { background: #fff1db; color: #b35c00; } .ps-rec { background: #e8f8e0; color: #2b7a1f; } .ps-sl { background: #e9e8ff; color: #3b30a8; }
+.pick-key { margin-top: 6px; flex-wrap: wrap; }
+.hypno { width: 100%; height: auto; display: block; margin: 4px 0 2px; }
+.stg-list { display: grid; gap: 12px; margin-top: 14px; }
+.stg-top, .stg-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 14px; }
+.stg-top i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 7px; }
+.stg-val { color: var(--muted); font-variant-numeric: tabular-nums; } .stg-val b { color: var(--text); }
+.stg-bar { position: relative; height: 8px; margin: 7px 0 5px; border-radius: 4px; background: var(--card-2, #f2f4f7); }
+.stg-norm { position: absolute; top: 0; bottom: 0; border-radius: 4px; background: #d9dcf5; }
+.stg-mark { position: absolute; top: -3px; width: 4px; height: 14px; margin-left: -2px; border-radius: 2px; }
+.stg-foot { font-size: 12px; color: var(--muted); }
+.chip-s { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.chip-s.ok { background: #d1fadf; color: #067647; } .chip-s.low { background: #fef0c7; color: #b54708; } .chip-s.high { background: #fee4e2; color: #b42318; }
+.note { padding: 10px 0; border-top: 1px solid var(--line); } .note:first-of-type { border-top: 0; }
+.note-h { display: flex; align-items: center; gap: 8px; } .note-h i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.note p { margin: 6px 0 0; font-size: 14px; line-height: 1.45; }
+.tips { margin: 0; padding-left: 20px; display: grid; gap: 12px; }
+.tips li { font-size: 14px; line-height: 1.45; } .tips li b { display: block; margin-bottom: 2px; } .tips li span { display: block; }
+.srclink { display: inline-block; margin-top: 4px; font-size: 12px; color: #4c3fd6; text-decoration: underline; word-break: break-word; }
+.srcs { margin: 6px 0 0; font-size: 12px; line-height: 1.6; color: var(--muted); }
+.srcs .srclink { display: inline; margin: 0; }
