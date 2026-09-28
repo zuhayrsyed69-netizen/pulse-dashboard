@@ -142,16 +142,16 @@
     if (!force && c && Date.now() - c.fetchedAt < MIN_INTERVAL) return Promise.resolve({ ok: true, skipped: true, cache: c, errors: [] });
     if (!tokenValid()) return Promise.resolve({ ok: false, error: 'auth', errors: [] });
     const now = new Date(), today = keyOf(now), tomorrow = keyOf(addDays(now, 1));
-    const d7 = keyOf(addDays(now, -6)), d14 = keyOf(addDays(now, -13)), d31 = keyOf(addDays(now, -30));
+    const d7 = keyOf(addDays(now, -6)), d14 = keyOf(addDays(now, -13)), d15 = keyOf(addDays(now, -14)), d31 = keyOf(addDays(now, -30));
     const jobs = {
-      sleep: () => listAll('sleep', `sleep.interval.civil_end_time >= "${d7}" AND sleep.interval.civil_end_time < "${tomorrow}"`, 25, 2).then(M.mapSleep),
+      sleep: () => listAll('sleep', `sleep.interval.civil_end_time >= "${d15}" AND sleep.interval.civil_end_time < "${tomorrow}"`, 25, 3).then(M.mapSleep),
       rhr: () => listAll('daily-resting-heart-rate', `daily_resting_heart_rate.date >= "${d31}"`, 100, 1).then((p) => M.mapDaily('rhr', p)),
       hrv: () => listAll('daily-heart-rate-variability', `daily_heart_rate_variability.date >= "${d31}"`, 100, 1).then((p) => M.mapDaily('hrv', p)),
       spo2: () => listAll('daily-oxygen-saturation', `daily_oxygen_saturation.date >= "${d7}"`, 20, 1).then((p) => M.mapDaily('spo2', p)),
       resp: () => listAll('daily-respiratory-rate', `daily_respiratory_rate.date >= "${d7}"`, 20, 1).then((p) => M.mapDaily('resp', p)),
       temp: () => listAll('daily-sleep-temperature-derivations', `daily_sleep_temperature_derivations.date >= "${d7}"`, 20, 1).then((p) => M.mapDaily('temp', p)),
       weight: () => listAll('weight', `weight.sample_time.civil_time >= "${d31}"`, 100, 1).then(M.mapWeight),
-      steps: () => rollup('steps', d7, tomorrow).then((r) => M.mapRollup('steps', r)),
+      steps: () => rollup('steps', d31, tomorrow).then((r) => M.mapRollup('steps', r)),
       calories: () => rollup('total-calories', d7, tomorrow).then((r) => M.mapRollup('calories', r)),
       azm: () => rollup('active-zone-minutes', d7, tomorrow).then((r) => M.mapRollup('azm', r)),
       zones: () => rollup('time-in-heart-rate-zone', d7, tomorrow).then((r) => M.mapRollup('zones', r)),

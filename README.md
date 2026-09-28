@@ -4,7 +4,9 @@ A mobile-first personal health dashboard (sleep, recovery, strain, workouts, vit
 Live: https://zuhayrsyed69-netizen.github.io/pulse-dashboard/
 
 - Open the link on your phone and use **Add to Home Screen** to install it.
-- Type values in by hand, or sync them from the **Google Health app** (Fitbit devices) through the Google Health API.
+- Everything is automatic from the **Google Health app** (Fitbit devices) via the Google Health API: nothing is typed in by hand.
+- Sleep, Recovery and Strain are calculated by Pulse and refresh on open, when you return to the app, and every 15 minutes while it's open.
+- Targets are automatic too: sleep (14-night average, 7–9 h), steps (30-day average) and strain (from today's recovery).
 - Everything is stored only in your browser (localStorage). There is no server. Synced data goes straight from Google's API to your browser.
 - Plain HTML/CSS/JS, no build step.
 
@@ -21,6 +23,6 @@ Live: https://zuhayrsyed69-netizen.github.io/pulse-dashboard/
 5. Clients → Create client → **Web application**
    - Authorized JavaScript origins: `https://zuhayrsyed69-netizen.github.io`
    - Authorized redirect URIs: `https://zuhayrsyed69-netizen.github.io/pulse-dashboard/`
-6. Copy the Client ID (no secret needed) and paste it in Pulse → Settings (gear icon), or set it in `config.js`.
+6. Put the Client ID (no secret needed) in `config.js`.
 
-Recovery, strain and sleep quality are calculated by Pulse from your Google Health data (see "How are these calculated?" in the app); they are not official Fitbit/Google scores.
+Recovery, strain, sleep quality and targets are calculated by Pulse from your Google Health data (see "How are these calculated?" in the app); they are not official Fitbit/Google scores. The Google Health API does not expose app goals, so targets are derived from your own history.

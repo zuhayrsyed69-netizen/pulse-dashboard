@@ -257,8 +257,36 @@
       baseline: { hrv: Math.round(Math.exp(ls.mean)), rhr: rBase.length ? Math.round(stats(rBase).mean) : null } };
   }
 
+  // ---------- automatic targets (the Google Health API v4 exposes no user goals) ----------
+  const TARGET_DEFAULTS = { sleep: 8, steps: 10000 };
+  const MIN_TARGET_DAYS = 7;
+  /** Sleep target from the 14 nights before `day`: average time asleep, kept within 7–9 h (adult guidance),
+      rounded to 15 min. Falls back to 8 h ("default") until 7 nights exist. */
+  function sleepTarget(day, sleepHoursByDay) {
+    const vals = priorKeys(day, 1, 14).map((k) => sleepHoursByDay && sleepHoursByDay[k]).filter((v) => v > 0);
+    if (vals.length < MIN_TARGET_DAYS) return { value: TARGET_DEFAULTS.sleep, source: 'default', days: vals.length, need: MIN_TARGET_DAYS };
+    const a = vals.reduce((x, y) => x + y, 0) / vals.length;
+    return { value: Math.round(clamp(a, 7, 9) * 4) / 4, source: 'personal', days: vals.length, avg: Math.round(a * 100) / 100 };
+  }
+  /** Step target from the 30 days before `day`: average steps rounded to 500 (min 3,000). Default 10,000 until 7 days exist. */
+  function stepTarget(day, stepsByDay) {
+    const vals = priorKeys(day, 1, 30).map((k) => stepsByDay && stepsByDay[k]).filter((v) => v > 0);
+    if (vals.length < MIN_TARGET_DAYS) return { value: TARGET_DEFAULTS.steps, source: 'default', days: vals.length, need: MIN_TARGET_DAYS };
+    const a = vals.reduce((x, y) => x + y, 0) / vals.length;
+    return { value: Math.max(3000, Math.round(a / 500) * 500), source: 'personal', days: vals.length, avg: Math.round(a) };
+  }
+  /** WHOOP-style optimal strain band from today's recovery: centre = 6 + 0.1 × recovery, ±2 (0–21).
+      Recovery 100% → 14–18, 67% → 10.7–14.7, 34% → 7.4–11.4, 0% → 4–8. */
+  function strainTarget(recovery) {
+    if (!(typeof recovery === 'number' && isFinite(recovery))) return null;
+    const c = 6 + 0.1 * clamp(recovery, 0, 100);
+    const r1 = (v) => Math.round(v * 10) / 10;
+    return { low: r1(clamp(c - 2, 0, 21)), high: r1(clamp(c + 2, 0, 21)), mid: r1(c) };
+  }
+
   return {
     dateKey, keyToDate, durationSec, mapSleep, mapDaily, mapWeight, mapRollup, mapExercise, mapExerciseType,
-    computeStrain, computeSleepQuality, computeRecovery, priorKeys, MIN_HRV_DAYS, STRAIN_K, STRAIN_MAX_TRIMP
+    computeStrain, computeSleepQuality, computeRecovery, priorKeys, MIN_HRV_DAYS, STRAIN_K, STRAIN_MAX_TRIMP,
+    sleepTarget, stepTarget, strainTarget, TARGET_DEFAULTS, MIN_TARGET_DAYS
   };
 });

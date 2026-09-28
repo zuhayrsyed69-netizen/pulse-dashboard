@@ -11,10 +11,10 @@
   <meta name="apple-mobile-web-app-title" content="Pulse">
   <meta name="description" content="Personal daily health dashboard: sleep, recovery, strain, workouts and health metrics. Manual entry, stored on this device.">
   <title>Pulse</title>
-  <link rel="manifest" href="manifest.json?v=3">
-  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png?v=3">
-  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png?v=3">
-  <link rel="stylesheet" href="styles.css?v=3">
+  <link rel="manifest" href="manifest.json?v=4">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png?v=4">
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png?v=4">
+  <link rel="stylesheet" href="styles.css?v=4">
 </head>
 <body>
   <main class="app">
@@ -32,7 +32,8 @@
 
       <div class="card">
         <div class="rings3" data-rings="sleep,recovery,strain"></div>
-        <p class="hint" id="today-empty">Nothing logged yet today. Connect Google Health or tap a ring to enter a value.</p>
+        <p class="updated" id="rings-updated" hidden></p>
+        <p class="hint" id="today-empty" hidden></p>
         <button class="linkbtn center" type="button" data-explain>How are these calculated?</button>
         <div class="actions">
           <button class="btn primary" id="btn-copy-rings" type="button">
@@ -51,7 +52,7 @@
       <div class="card">
         <div class="card-head"><h2>General feedback</h2></div>
         <ul class="insights" id="insights"></ul>
-        <p class="disclaimer">Based only on the numbers you have entered in Pulse. General guidance, not medical advice.</p>
+        <p class="disclaimer">Based on your Google Health data. General guidance, not medical advice.</p>
       </div>
 
       <div class="card">
@@ -76,31 +77,24 @@
         <div class="hero-info">
           <span class="muted">Day strain</span>
           <span class="hero-val" id="fit-strain">–</span>
-          <span class="muted small" id="fit-strain-sub">Tap the ring to enter today's strain</span>
-          <button class="btn sm" type="button" data-edit-ring="strain">Edit strain</button>
+          <span class="muted small" id="fit-strain-sub"></span>
+          <button class="btn sm" type="button" data-detail="strain">Details</button>
         </div>
       </div>
 
       <div class="card">
-        <div class="card-head"><h2>Log a workout</h2><span class="muted small" id="today-total"></span></div>
-        <div class="sport-grid">
-          <button class="sport" data-quick="football" type="button">
-            <span class="sport-emoji" aria-hidden="true">⚽</span><span class="sport-name">Football</span><span class="sport-cta">Tap to log</span>
-          </button>
-          <button class="sport" data-quick="padel" type="button">
-            <span class="sport-emoji" aria-hidden="true">🎾</span><span class="sport-name">Padel</span><span class="sport-cta">Tap to log</span>
-          </button>
-        </div>
-        <button class="btn block" id="btn-log-other" type="button">
-          <svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-          Log another activity
-        </button>
-        <h3>Today</h3>
+        <div class="card-head"><h2>Today's workouts</h2><span class="muted small" id="today-total"></span></div>
         <ul class="log" id="today-list"></ul>
+        <p class="disclaimer">Recorded by your Fitbit and synced from Google Health.</p>
       </div>
 
       <div class="card">
-        <div class="card-head"><h2>Last 7 days</h2><span class="muted small" id="week-total"></span></div>
+        <div class="card-head"><h2>Strain · 7 days</h2><span class="muted small" id="strain-avg"></span></div>
+        <div class="chart" id="strain-chart"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Workout minutes</h2><span class="muted small" id="week-total"></span></div>
         <div class="chart" id="week-chart"></div>
       </div>
 
@@ -122,16 +116,12 @@
         <div class="hero-info">
           <span class="muted">Last night</span>
           <span class="hero-val" id="sl-hours">–</span>
-          <span class="muted small" id="sl-sub">No sleep logged for today</span>
+          <span class="muted small" id="sl-sub"></span>
           <span id="sl-src"></span>
         </div>
       </div>
       <div class="card" id="sl-stages" hidden></div>
-      <div class="btn-row3">
-        <button class="btn primary" id="btn-log-sleep" type="button">Log sleep</button>
-        <button class="btn" type="button" data-edit-ring="sleep">Quality</button>
-        <button class="btn" id="btn-sleep-goal" type="button">Goal</button>
-      </div>
+      <button class="btn block sl-detail" type="button" data-detail="sleep">Sleep score details</button>
 
       <div class="card">
         <div class="card-head"><h2>Last 7 nights</h2><span class="muted small" id="sleep-avg"></span></div>
@@ -151,19 +141,24 @@
         <div class="hero-info">
           <span class="muted">Recovery</span>
           <span class="hero-val" id="hl-rec">–</span>
-          <span class="muted small" id="hl-rec-sub">Tap the ring to enter today's recovery</span>
-          <button class="btn sm" type="button" data-edit-ring="recovery">Edit recovery</button>
+          <span class="muted small" id="hl-rec-sub"></span>
+          <button class="btn sm" type="button" data-detail="recovery">Details</button>
         </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Recovery · 7 days</h2><span class="muted small" id="rec-avg"></span></div>
+        <div class="chart" id="rec-chart"></div>
       </div>
 
       <div class="card">
         <div class="card-head"><h2>Today's vitals</h2><span class="muted small">7-day trend</span></div>
         <div class="vitals" id="vitals"></div>
-        <p class="disclaimer">Filled from Google Health when connected. Tap a tile to type a value; typed values override synced ones.</p>
+        <p class="disclaimer">All values come from Google Health. Tap a tile for the last 7 days.</p>
       </div>
     </section>
 
-    <footer class="foot">Your data stays in this browser. Synced data comes only from Google Health when you connect it.</footer>
+    <footer class="foot">Scores are calculated automatically from your Google Health data. Everything stays in this browser.</footer>
   </main>
 
   <nav class="tabbar" role="tablist" aria-label="Sections">
@@ -188,9 +183,9 @@
   </div>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="config.js?v=3"></script>
-  <script src="metrics.js?v=3"></script>
-  <script src="sync.js?v=3"></script>
-  <script src="app.js?v=3"></script>
+  <script src="config.js?v=4"></script>
+  <script src="metrics.js?v=4"></script>
+  <script src="sync.js?v=4"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>
