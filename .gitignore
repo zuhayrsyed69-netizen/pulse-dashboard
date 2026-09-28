@@ -1,0 +1,8 @@
+# Dev/test artifacts (not part of the deployed app)
+test_*.py
+make_icons.py
+*.png
+!icons/*.png
+node_modules/
+__pycache__/
+.DS_Store
