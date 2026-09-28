@@ -11,10 +11,10 @@
   <meta name="apple-mobile-web-app-title" content="Pulse">
   <meta name="description" content="Personal daily health dashboard: sleep, recovery, strain, workouts and health metrics. Manual entry, stored on this device.">
   <title>Pulse</title>
-  <link rel="manifest" href="manifest.json?v=2">
-  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png?v=2">
-  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png?v=2">
-  <link rel="stylesheet" href="styles.css?v=2">
+  <link rel="manifest" href="manifest.json?v=3">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png?v=3">
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png?v=3">
+  <link rel="stylesheet" href="styles.css?v=3">
 </head>
 <body>
   <main class="app">
@@ -23,12 +23,17 @@
     <section class="panel" id="tab-today" data-panel="today" aria-labelledby="h-today">
       <header class="top">
         <div><p class="eyebrow" data-date>Today</p><h1 id="h-today">Today</h1></div>
-        <span class="badge" title="Values are typed in by you. No device connection.">Manual entry</span>
+        <button class="gear" type="button" data-settings aria-label="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
       </header>
+
+      <div class="ptr" id="ptr" hidden>Pull to sync</div>
+      <div class="syncbar" id="syncbar" hidden></div>
+      <div class="card connect-card" id="connect-card" hidden></div>
 
       <div class="card">
         <div class="rings3" data-rings="sleep,recovery,strain"></div>
-        <p class="hint" id="today-empty">Nothing logged yet today. Tap a ring to enter the number from your Fitbit app.</p>
+        <p class="hint" id="today-empty">Nothing logged yet today. Connect Google Health or tap a ring to enter a value.</p>
+        <button class="linkbtn center" type="button" data-explain>How are these calculated?</button>
         <div class="actions">
           <button class="btn primary" id="btn-copy-rings" type="button">
             <svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8"/></svg>
@@ -63,6 +68,7 @@
     <section class="panel" id="tab-fitness" data-panel="fitness" aria-labelledby="h-fitness" hidden>
       <header class="top">
         <div><p class="eyebrow" data-date>Today</p><h1 id="h-fitness">Fitness</h1></div>
+        <button class="gear" type="button" data-settings aria-label="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
       </header>
 
       <div class="card hero">
@@ -108,6 +114,7 @@
     <section class="panel" id="tab-sleep" data-panel="sleep" aria-labelledby="h-sleep" hidden>
       <header class="top">
         <div><p class="eyebrow" data-date>Today</p><h1 id="h-sleep">Sleep</h1></div>
+        <button class="gear" type="button" data-settings aria-label="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
       </header>
 
       <div class="card hero">
@@ -116,8 +123,10 @@
           <span class="muted">Last night</span>
           <span class="hero-val" id="sl-hours">–</span>
           <span class="muted small" id="sl-sub">No sleep logged for today</span>
+          <span id="sl-src"></span>
         </div>
       </div>
+      <div class="card" id="sl-stages" hidden></div>
       <div class="btn-row3">
         <button class="btn primary" id="btn-log-sleep" type="button">Log sleep</button>
         <button class="btn" type="button" data-edit-ring="sleep">Quality</button>
@@ -134,6 +143,7 @@
     <section class="panel" id="tab-health" data-panel="health" aria-labelledby="h-health" hidden>
       <header class="top">
         <div><p class="eyebrow" data-date>Today</p><h1 id="h-health">Health</h1></div>
+        <button class="gear" type="button" data-settings aria-label="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
       </header>
 
       <div class="card hero">
@@ -149,11 +159,11 @@
       <div class="card">
         <div class="card-head"><h2>Today's vitals</h2><span class="muted small">7-day trend</span></div>
         <div class="vitals" id="vitals"></div>
-        <p class="disclaimer">Tap a tile to enter today's value from your Fitbit app.</p>
+        <p class="disclaimer">Filled from Google Health when connected. Tap a tile to type a value; typed values override synced ones.</p>
       </div>
     </section>
 
-    <footer class="foot">Everything is entered by you and stays on this device. Pulse is not connected to Fitbit.</footer>
+    <footer class="foot">Your data stays in this browser. Synced data comes only from Google Health when you connect it.</footer>
   </main>
 
   <nav class="tabbar" role="tablist" aria-label="Sections">
@@ -178,6 +188,9 @@
   </div>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="app.js?v=2"></script>
+  <script src="config.js?v=3"></script>
+  <script src="metrics.js?v=3"></script>
+  <script src="sync.js?v=3"></script>
+  <script src="app.js?v=3"></script>
 </body>
 </html>

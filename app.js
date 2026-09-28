@@ -19,9 +19,11 @@
     spo2:   { label: 'SpO₂',        unit: '%',      min: 80, max: 100,   step: 1,   dec: 0, bump: 1,   start: 96,   color: '#1f8fff' },
     resp:   { label: 'Resp. rate',  unit: 'br/min', min: 6,  max: 30,    step: 0.1, dec: 1, bump: 0.5, start: 15,   color: '#0ea5a4' },
     weight: { label: 'Weight',      unit: 'kg',     min: 30, max: 250,   step: 0.1, dec: 1, bump: 0.5, start: 75,   color: '#475467' },
-    steps:  { label: 'Steps',       unit: '',       min: 0,  max: 60000, step: 100, dec: 0, bump: 500, start: 8000, color: '#12b76a' }
+    steps:  { label: 'Steps',       unit: '',       min: 0,  max: 60000, step: 100, dec: 0, bump: 500, start: 8000, color: '#12b76a' },
+    temp:   { label: 'Skin temp Δ', unit: '°C',     min: -5, max: 5,     step: 0.1, dec: 1, bump: 0.1, start: 0,    color: '#ea580c' },
+    calories: { label: 'Calories',  unit: 'kcal',   min: 0,  max: 10000, step: 10,  dec: 0, bump: 50,  start: 2200, color: '#f5a800' }
   };
-  const HEALTH_ORDER = ['rhr', 'hrv', 'spo2', 'resp', 'weight', 'steps'];
+  const HEALTH_ORDER = ['rhr', 'hrv', 'spo2', 'resp', 'temp', 'weight', 'steps', 'calories'];
 
   const ACTIVITIES = {
     football:   { label: 'Football',      emoji: '⚽', color: '#12b76a' },
@@ -47,7 +49,7 @@
   // ---------- state & migration ----------
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   function migrate(s) {
-    const out = { v: 2, days: {}, workouts: [], settings: { sleepGoal: 8, copyBg: 'white' } };
+    const out = { v: 2, days: {}, workouts: [], hiddenSync: [], settings: { sleepGoal: 8, copyBg: 'white' } };
     if (!s || typeof s !== 'object') return out;
     if (s.days && typeof s.days === 'object') {
       for (const [k, d] of Object.entries(s.days)) if (d && typeof d === 'object') out.days[k] = Object.assign({}, d);
@@ -68,6 +70,7 @@
       });
     }
     if (s.settings && typeof s.settings === 'object') Object.assign(out.settings, s.settings);
+    if (Array.isArray(s.hiddenSync)) out.hiddenSync = s.hiddenSync.filter((x) => typeof x === 'string');
     return out;
   }
   function load() {
@@ -86,8 +89,60 @@
   const pad = (n) => String(n).padStart(2, '0');
   const dayKey = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   const isNum = (v) => typeof v === 'number' && isFinite(v);
-  function getVal(f, k = dayKey()) { const d = state.days[k]; return d && isNum(d[f]) ? d[f] : null; }
-  function getStr(f, k = dayKey()) { const d = state.days[k]; return d && typeof d[f] === 'string' ? d[f] : null; }
+  // Manual entries (typed in by the user) always win; then Google Health synced values; then values calculated from them.
+  function manualVal(f, k = dayKey()) { const d = state.days[k]; return d && isNum(d[f]) ? d[f] : null; }
+  let SYNC = null, COMPUTED = {};
+  function refreshSync() { SYNC = window.PulseSync ? window.PulseSync.cache() : null; COMPUTED = {}; }
+  const SERIES = ['rhr', 'hrv', 'spo2', 'resp', 'temp', 'weight', 'steps', 'calories'];
+  function syncedSleep(k) { return SYNC && SYNC.series && SYNC.series.sleep ? SYNC.series.sleep[k] || null : null; }
+  function syncedVal(f, k) {
+    if (!SYNC || !SYNC.series) return null;
+    if (SERIES.includes(f)) { const ser = SYNC.series[f]; const v = ser && ser[k]; return isNum(v) ? v : null; }
+    if (f === 'sleepHours') { const sl = syncedSleep(k); return sl && isNum(sl.sleepHours) ? sl.sleepHours : null; }
+    return null;
+  }
+  function mergedSeries(f) {
+    const out = {};
+    if (SYNC && SYNC.series && SYNC.series[f]) Object.assign(out, SYNC.series[f]);
+    Object.keys(state.days).forEach((k) => { const v = manualVal(f, k); if (v !== null) out[k] = v; });
+    return out;
+  }
+  function computed(f, k) {
+    const ck = f + '|' + k;
+    if (ck in COMPUTED) return COMPUTED[ck];
+    const PM = window.PulseMetrics, goal = state.settings.sleepGoal || 8;
+    let r = null;
+    if (PM) {
+      const ser = SYNC && SYNC.series;
+      if (f === 'strain' && ser) { const z = ser.zones && ser.zones[k], a = ser.azm && ser.azm[k]; if (z || a) r = PM.computeStrain(z, a); }
+      else if (f === 'sleep') { const sl = syncedSleep(k); if (sl) r = PM.computeSleepQuality(sl, goal); }
+      else if (f === 'recovery') {
+        const hrv = mergedSeries('hrv');
+        if (Object.keys(hrv).length) r = PM.computeRecovery(k, hrv, mergedSeries('rhr'), getVal('sleepHours', k), goal);
+      }
+    }
+    COMPUTED[ck] = r;
+    return r;
+  }
+  function metric(f, k = dayKey()) {
+    const man = manualVal(f, k);
+    if (man !== null) return { v: man, src: 'manual' };
+    if (f === 'strain' || f === 'sleep' || f === 'recovery') {
+      const c = computed(f, k);
+      return c && isNum(c.value) ? { v: c.value, src: 'calc', info: c } : { v: null, src: null, info: c };
+    }
+    const sv = syncedVal(f, k);
+    return sv !== null ? { v: sv, src: 'google' } : { v: null, src: null };
+  }
+  function getVal(f, k = dayKey()) { return metric(f, k).v; }
+  function getStr(f, k = dayKey()) {
+    const d = state.days[k];
+    if (d && typeof d[f] === 'string') return d[f];
+    if ((f === 'bedtime' || f === 'wake') && manualVal('sleepHours', k) === null) { const sl = syncedSleep(k); return sl && sl[f] ? sl[f] : null; }
+    return null;
+  }
+  const SRC_LABEL = { manual: 'Manual', google: 'Google Health', calc: 'Calculated' };
+  const srcBadge = (src) => (src ? `<span class="src src-${src}">${SRC_LABEL[src]}</span>` : '');
   function setFields(obj, k = dayKey()) {
     const d = Object.assign({}, state.days[k]);
     for (const [f, v] of Object.entries(obj)) { if (v === null || v === undefined || v === '') delete d[f]; else d[f] = v; }
@@ -135,6 +190,7 @@
         <span class="ringw-c"><span class="ringw-pct">–</span><span class="ringw-sub"></span></span>
       </span>
       <span class="ringw-label">${RINGS[m].label}</span>
+      <span class="ringw-src"></span>
     </button>`;
   }
   $$('[data-rings]').forEach((el) => {
@@ -143,7 +199,8 @@
   function updateRings(preview = {}) {
     $$('.ringw').forEach((w) => {
       const m = w.dataset.ring;
-      const v = m in preview ? preview[m] : getVal(m);
+      const mt = m in preview ? { v: preview[m], src: 'manual' } : metric(m);
+      const v = mt.v;
       const p = v === null ? 0 : clamp(v / RINGS[m].max, 0, 1);
       const rv = $('.rv', w);
       rv.style.strokeDashoffset = String(CIRC * (1 - p));
@@ -151,7 +208,9 @@
       rv.style.stroke = ringColor(m, v);
       const pct = ringPct(m, v);
       $('.ringw-pct', w).textContent = pct === null ? '–' : pct + '%';
-      $('.ringw-sub', w).textContent = ringSub(m, v, false);
+      const cal = v === null && mt.info && mt.info.calibrating;
+      $('.ringw-sub', w).textContent = cal ? `Calibrating ${mt.info.hrvDays}/${mt.info.need}` : ringSub(m, v, false);
+      $('.ringw-src', w).innerHTML = srcBadge(mt.src);
       w.classList.toggle('empty', v === null);
     });
   }
@@ -243,13 +302,15 @@
       if (p.length >= 3 && hrv <= avg(p) * 0.85) list.push({ t: 'warn', m: `HRV is ${hrv} ms, lower than your recent average of ${Math.round(avg(p))} ms.` });
     }
     const since = Date.now() - 7 * 864e5;
-    const wk = state.workouts.filter((w) => w.ts >= since);
+    const wk = allWorkouts().filter((w) => w.ts >= since);
     if (wk.length) {
       const mins = wk.reduce((a, w) => a + w.duration, 0);
       list.push({ t: 'info', m: `${wk.length} workout${wk.length > 1 ? 's' : ''} (${mins} min) logged in the last 7 days.` });
     } else list.push({ t: 'info', m: 'No workouts logged in the last 7 days. Log one from the Fitness tab.' });
+    const recInfo = metric('recovery').info;
+    if (rec === null && recInfo && recInfo.calibrating) list.push({ t: 'info', m: `Recovery is calibrating: it needs HRV from at least ${recInfo.need} previous days (currently ${recInfo.hrvDays}).` });
     const missing = [];
-    if (rec === null) missing.push('recovery');
+    if (rec === null && !(recInfo && recInfo.calibrating)) missing.push('recovery');
     if (sh === null) missing.push('sleep hours');
     if (sq === null) missing.push('sleep quality');
     if (strain === null) missing.push('strain');
@@ -260,7 +321,9 @@
 
   // ---------- render ----------
   function render() {
+    refreshSync();
     $$('[data-date]').forEach((el) => { el.textContent = longDate(); });
+    renderSyncUI();
     updateRings();
     const any = RING_ORDER.some((m) => getVal(m) !== null);
     $('#today-empty').hidden = any;
@@ -268,27 +331,33 @@
     scheduleCard();
   }
 
-  function tile(label, val, unit, sub, go) {
+  function tile(label, val, unit, sub, go, src) {
     const empty = val === null;
     return `<button class="tile${empty ? ' empty' : ''}" type="button" data-go="${go}">
       <span class="t-label">${esc(label)}</span>
       <span class="t-val">${empty ? '–' : esc(val)}${!empty && unit ? `<small>${esc(unit)}</small>` : ''}</span>
-      <span class="t-sub">${esc(sub)}</span></button>`;
+      <span class="t-sub">${esc(sub)}</span>${!empty ? srcBadge(src) : ''}</button>`;
   }
   function renderToday() {
     const today = workoutsFor(dayKey());
     const mins = today.reduce((a, w) => a + w.duration, 0);
-    const sh = getVal('sleepHours'), rhr = getVal('rhr'), steps = getVal('steps');
+    const shM = metric('sleepHours'), rhrM = metric('rhr'), stM = metric('steps');
+    const sh = shM.v, rhr = rhrM.v, steps = stM.v;
     $('#glance').innerHTML =
       tile('Workouts today', today.length ? String(today.length) : null, today.length ? ` · ${mins} min` : '', today.length ? today.map((w) => actInfo(w).label).slice(0, 2).join(', ') : 'Tap to log', 'fitness') +
-      tile('Sleep', sh !== null ? fmtHours(sh) : null, '', sh !== null ? `goal ${state.settings.sleepGoal}h` : 'Tap to log', 'sleep') +
-      tile('Resting HR', rhr !== null ? String(rhr) : null, 'bpm', rhr !== null ? 'today' : 'Tap to add', 'health') +
-      tile('Steps', steps !== null ? steps.toLocaleString() : null, '', steps !== null ? 'today' : 'Tap to add', 'health');
+      tile('Sleep', sh !== null ? fmtHours(sh) : null, '', sh !== null ? `goal ${state.settings.sleepGoal}h` : 'Tap to log', 'sleep', shM.src) +
+      tile('Resting HR', rhr !== null ? String(rhr) : null, 'bpm', rhr !== null ? 'today' : 'Tap to add', 'health', rhrM.src) +
+      tile('Steps', steps !== null ? steps.toLocaleString() : null, '', steps !== null ? 'today' : 'Tap to add', 'health', stM.src);
     $('#insights').innerHTML = insights().map((i) => `<li class="${i.t}"><span class="ind" aria-hidden="true"></span><span>${esc(i.m)}</span></li>`).join('');
   }
 
+  function allWorkouts() {
+    const hidden = new Set(state.hiddenSync || []);
+    const synced = (SYNC && Array.isArray(SYNC.workouts) ? SYNC.workouts : []).filter((w) => !hidden.has(w.id));
+    return state.workouts.concat(synced);
+  }
   function workoutsFor(key) {
-    return state.workouts.filter((w) => dayKey(new Date(w.ts)) === key).sort((a, b) => b.ts - a.ts);
+    return allWorkouts().filter((w) => dayKey(new Date(w.ts)) === key).sort((a, b) => b.ts - a.ts);
   }
   function liHTML(w, showDate) {
     const a = actInfo(w);
@@ -297,7 +366,8 @@
       <span class="ico" aria-hidden="true">${a.emoji}</span>
       <div class="info">
         <div class="title">${esc(a.label)} · ${w.duration} min</div>
-        <div class="meta">${w.rpe ? `Effort ${w.rpe}/10 · ` : ''}${esc(when)}</div>
+        <div class="meta">${w.rpe ? `Effort ${w.rpe}/10 · ` : ''}${w.avgHr ? `avg ${w.avgHr} bpm · ` : ''}${w.calories ? `${w.calories} kcal · ` : ''}${esc(when)}</div>
+        ${w.source === 'google' ? srcBadge('google') : ''}
         ${w.note ? `<div class="note">${esc(w.note)}</div>` : ''}
       </div>
       <button class="del" type="button" data-del="${esc(w.id)}" aria-label="Delete ${esc(a.label)} entry">✕</button>
@@ -306,11 +376,15 @@
   function renderFitness() {
     const s = getVal('strain');
     $('#fit-strain').innerHTML = s === null ? '–' : `${s.toFixed(1)}<span class="muted"> / 21</span>`;
-    $('#fit-strain-sub').textContent = s === null ? "Tap the ring to enter today's strain" : `${ringPct('strain', s)}% of max strain`;
+    const sm = metric('strain'), azmT = SYNC && SYNC.series && SYNC.series.azm && SYNC.series.azm[dayKey()];
+    let fsub = s === null ? (window.PulseSync && window.PulseSync.status() === 'connected' ? 'No heart-rate zone data yet today' : "Tap the ring to enter today's strain") : `${ringPct('strain', s)}% of max strain`;
+    if (sm.src === 'calc' && sm.info) fsub += ` · load ${sm.info.trimp}`;
+    if (azmT) fsub += ` · ${azmT.total} AZM`;
+    $('#fit-strain-sub').textContent = fsub;
     const tk = dayKey();
     const today = workoutsFor(tk);
     const cutoff = Date.now() - 14 * 864e5;
-    const recent = state.workouts.filter((w) => dayKey(new Date(w.ts)) !== tk && w.ts >= cutoff).sort((a, b) => b.ts - a.ts).slice(0, 20);
+    const recent = allWorkouts().filter((w) => dayKey(new Date(w.ts)) !== tk && w.ts >= cutoff).sort((a, b) => b.ts - a.ts).slice(0, 20);
     $('#today-list').innerHTML = today.length ? today.map((w) => liHTML(w, false)).join('') : '<li class="empty">No workouts logged today</li>';
     $('#recent-list').innerHTML = recent.length ? recent.map((w) => liHTML(w, true)).join('') : '<li class="empty">No workouts in the last 14 days</li>';
     const mins = today.reduce((a, w) => a + w.duration, 0);
@@ -333,6 +407,18 @@
     }
     if (q !== null) sub += ` · quality ${q}%`;
     $('#sl-sub').textContent = sub;
+    const hm = metric('sleepHours');
+    $('#sl-src').innerHTML = srcBadge(hm.src);
+    const sl = manualVal('sleepHours') === null ? syncedSleep(dayKey()) : null;
+    const box = $('#sl-stages');
+    if (sl && sl.stages && sl.minutesAsleep) {
+      const st = sl.stages, total = st.deep + st.light + st.rem + st.awake || 1;
+      const segs = [['Deep', st.deep, '#3f2fb3'], ['Light', st.light, '#9d8cf5'], ['REM', st.rem, '#22b8cf'], ['Awake', st.awake, '#f79009']];
+      box.innerHTML = `<div class="stagebar">${segs.map(([n, v, c]) => `<span style="width:${(v / total) * 100}%;background:${c}" title="${n}"></span>`).join('')}</div>
+        <div class="stage-legend">${segs.map(([n, v, c]) => `<span><i style="background:${c}"></i>${n} <b>${fmtHours(v / 60)}</b></span>`).join('')}</div>
+        <p class="muted small" style="margin:10px 0 0">Efficiency ${sl.efficiency}% · ${Math.round(((st.deep + st.rem) / sl.minutesAsleep) * 100)}% deep + REM</p>`;
+      box.hidden = false;
+    } else { box.hidden = true; box.innerHTML = ''; }
     const vals = last7().map((d) => getVal('sleepHours', dayKey(d)));
     const got = vals.filter((v) => v !== null);
     $('#sleep-avg').textContent = (got.length ? `avg ${fmtHours(avg(got))} · ` : '') + `goal ${fmtHours(goal)}`;
@@ -342,17 +428,134 @@
     const r = getVal('recovery');
     $('#hl-rec').textContent = r === null ? '–' : `${recZone(r)} zone`;
     $('#hl-rec').style.color = r === null ? '' : recColor(r);
-    $('#hl-rec-sub').textContent = r === null ? "Tap the ring to enter today's recovery" : r >= 67 ? 'Well recovered' : r >= 34 ? 'Moderately recovered' : 'Low recovery, go easy';
+    const rm = metric('recovery');
+    $('#hl-rec-sub').textContent = r === null
+      ? (rm.info && rm.info.calibrating ? `Calibrating: needs ${rm.info.need} days of HRV (have ${rm.info.hrvDays})` : "Tap the ring to enter today's recovery")
+      : (r >= 67 ? 'Well recovered' : r >= 34 ? 'Moderately recovered' : 'Low recovery, go easy');
+    if (r === null && rm.info && rm.info.calibrating) { $('#hl-rec').textContent = 'Calibrating'; }
     const days = last7();
     $('#vitals').innerHTML = HEALTH_ORDER.map((f) => {
       const c = HEALTH[f], v = getVal(f), vals = days.map((d) => getVal(f, dayKey(d)));
+      if (f === 'calories' && v === null && !vals.some((x) => x !== null) && !(SYNC && SYNC.series)) return '';
       return `<button class="tile vital${v === null ? ' empty' : ''}" type="button" data-health="${f}">
         <span class="t-label">${esc(c.label)}</span>
-        <span class="t-val">${v === null ? '–' : esc(fmtNum(v, c.dec))}${v !== null && c.unit ? `<small>${esc(c.unit)}</small>` : ''}</span>
-        <span class="t-sub">${v === null ? 'Tap to add' : 'today'}</span>
+        <span class="t-val">${v === null ? '–' : esc((f === 'temp' && v > 0 ? '+' : '') + fmtNum(v, c.dec))}${v !== null && c.unit ? `<small>${esc(c.unit)}</small>` : ''}</span>
+        <span class="t-sub">${v === null ? 'Tap to add' : srcBadge(metric(f).src)}</span>
         ${sparkline(vals, c.color)}
       </button>`;
     }).join('');
+  }
+
+  // ---------- Google Health sync UI ----------
+  const PS = window.PulseSync;
+  const ago = (t) => { if (!t) return 'never'; const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
+  let syncing = false;
+  function renderSyncUI() {
+    if (!PS) return;
+    const st = PS.status(), c = SYNC, card = $('#connect-card'), bar = $('#syncbar');
+    if (st === 'connected') {
+      card.hidden = true; bar.hidden = false;
+      bar.innerHTML = `<span class="dot-live"></span><span>Google Health · ${syncing ? 'syncing…' : 'synced ' + esc(ago(c && c.fetchedAt))}</span><button type="button" class="linkbtn" id="btn-sync-now">${syncing ? '' : 'Sync now'}</button>`;
+    } else {
+      bar.hidden = !(c && c.fetchedAt);
+      if (!bar.hidden) bar.innerHTML = `<span class="dot-off"></span><span>Showing Google Health data from ${esc(ago(c.fetchedAt))}</span>`;
+      card.hidden = false;
+      const txt = st === 'no-client' ? ['Auto-sync from Google Health', 'Connect your Fitbit data from the Google Health app. One-time setup in Settings.', 'Set up']
+        : st === 'expired' ? ['Reconnect Google Health', 'Your Google session ended. Reconnect to keep syncing.', 'Reconnect']
+        : ['Connect Google Health', 'Fill your rings, sleep, vitals and workouts automatically from the Google Health app.', 'Connect'];
+      card.innerHTML = `<div><strong>${txt[0]}</strong><p class="muted small">${txt[1]}</p></div><button class="btn primary sm2" type="button" id="btn-connect">${txt[2]}</button>`;
+    }
+  }
+  function startConnect() {
+    if (!PS.clientId()) { openSettings(); return; }
+    PS.setMeta({ needsReconnect: false });
+    PS.connect({ returnTab: currentTab || 'today' });
+  }
+  function doSync(force) {
+    if (!PS || !PS.tokenValid() || syncing) return Promise.resolve();
+    syncing = true; renderSyncUI();
+    return PS.sync(force).then((res) => {
+      syncing = false;
+      PS.setMeta({ lastErrors: (res.errors || []).map((e) => `${e.type}: ${e.status || ''} ${e.message || ''}`.trim()), lastResult: res.error || 'ok' });
+      if (res.error === 'auth') toast('Google Health session expired. Tap Reconnect.');
+      else if (res.error === 'profile') toast("Your Google Health profile isn't set up yet. Open the Google Health app first.");
+      else if (!res.ok) toast('Sync failed. Check Settings for details.');
+      else if (!res.skipped) toast(res.errors.length ? `Synced (some data unavailable)` : 'Synced from Google Health');
+      render();
+      if ($('#set-status')) openSettings();
+    });
+  }
+
+  function openSettings() {
+    const st = PS.status(), m = PS.meta(), c = PS.cache(), cidSrc = PS.clientIdSource(), t = PS.token();
+    const pill = st === 'connected' ? '<span class="pill ok">Connected</span>' : st === 'expired' ? '<span class="pill warn">Expired</span>' : st === 'no-client' ? '<span class="pill">Not set up</span>' : '<span class="pill">Not connected</span>';
+    const info = st === 'connected'
+      ? `${m.email ? esc(m.email) + ' · ' : ''}token valid ${Math.max(0, Math.round((t.expires_at - Date.now()) / 60000))} min · last synced ${esc(ago(c && c.fetchedAt))}`
+      : st === 'expired' ? `${m.email ? esc(m.email) + ' · ' : ''}last synced ${esc(ago(c && c.fetchedAt))}` : st === 'no-client' ? 'Add your OAuth Client ID below to enable sync.' : 'Not connected yet.';
+    const btns = st === 'connected'
+      ? '<button class="btn primary" type="button" id="set-sync">Sync now</button><button class="btn danger" type="button" id="set-disc">Disconnect</button>'
+      : st === 'no-client' ? '' : `<button class="btn primary" type="button" id="set-connect">${st === 'expired' ? 'Reconnect' : 'Connect'} Google Health</button>${m.linked ? '<button class="btn danger" type="button" id="set-disc">Disconnect</button>' : ''}`;
+    const errs = (m.lastErrors || []).length ? `<p class="sheet-note">Last sync: some data could not be read (${esc(m.lastErrors.slice(0, 4).join('; '))}). Check that the Google Health API is enabled and all scopes were allowed.</p>` : '';
+    const html = `
+      <h2 id="sheet-title">Settings</h2>
+      <div class="set-card">
+        <div class="set-row"><div><div class="set-title">Google Health</div><div class="muted small" id="set-status">${info}</div></div>${pill}</div>
+        ${btns ? `<div class="actions">${btns}</div>` : ''}
+        ${errs}
+        <label class="check"><input type="checkbox" id="set-auto" ${m.autoReconnect === false ? '' : 'checked'}> Reconnect automatically when the app opens (tokens last ~1 hour)</label>
+      </div>
+      <div class="field">
+        <label for="set-cid">Google OAuth Client ID</label>
+        <div class="row"><input class="txt" id="set-cid" type="text" autocomplete="off" spellcheck="false" placeholder="1234567890-abc123.apps.googleusercontent.com" value="${esc(PS.clientId())}" ${cidSrc === 'config' ? 'disabled' : ''}><button class="btn" type="button" id="set-cid-save" ${cidSrc === 'config' ? 'disabled' : ''}>Save</button></div>
+        <p class="muted small">${cidSrc === 'config' ? 'Set in config.js.' : 'Stored only in this browser.'} Authorized JavaScript origin: <code>${esc(location.origin)}</code><br>Authorized redirect URI: <code>${esc(PS.redirectUri())}</code></p>
+      </div>
+      <details class="setup"><summary>How to get a Client ID (one-time, ~10 min)</summary>
+        <ol>
+          <li>Open <a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener">Google Cloud Console</a> and create a project (e.g. "Pulse").</li>
+          <li>Enable the <a href="https://console.cloud.google.com/apis/library/health.googleapis.com" target="_blank" rel="noopener">Google Health API</a>.</li>
+          <li>Google Auth Platform › Branding: app name "Pulse", your email. Audience: External, keep "Testing", add your Google account as a test user.</li>
+          <li>Data Access › Add scopes: googlehealth.activity_and_fitness.readonly, googlehealth.health_metrics_and_measurements.readonly, googlehealth.sleep.readonly.</li>
+          <li>Clients › Create client › Web application. Authorized JavaScript origin <code>${esc(location.origin)}</code>, redirect URI <code>${esc(PS.redirectUri())}</code>.</li>
+          <li>Copy the Client ID here (no client secret needed) and tap Connect.</li>
+        </ol>
+      </details>
+      <button class="btn block" type="button" data-explain>How scores are calculated</button>
+      ${c ? '<button class="btn block" type="button" id="set-clear-cache">Clear synced data from this device</button>' : ''}
+      <p class="disclaimer">Privacy: Pulse has no server. Your Google access token and all synced and typed data are stored only in this browser (localStorage) and sent only to Google's APIs. Disconnect removes the token; you can also revoke access at myaccount.google.com/permissions.</p>`;
+    if ($('#sheet').hidden) openSheet(html); else replaceSheet(html);
+    const on = (id, fn) => { const el = $('#' + id); if (el) el.addEventListener('click', fn); };
+    on('set-connect', startConnect);
+    on('set-sync', () => doSync(true));
+    on('set-disc', () => { PS.disconnect(); toast('Disconnected from Google Health'); render(); openSettings(); });
+    on('set-clear-cache', () => { PS.clearCache(); toast('Synced data cleared'); render(); openSettings(); });
+    on('set-cid-save', () => {
+      const v = $('#set-cid').value.trim();
+      if (v && !PS.validClientId(v)) { toast('That does not look like a Google OAuth Client ID'); return; }
+      PS.setClientId(v); toast(v ? 'Client ID saved' : 'Client ID removed'); render(); openSettings();
+    });
+    $('#set-auto').addEventListener('change', (e) => PS.setMeta({ autoReconnect: e.target.checked }));
+  }
+
+  function openExplainer() {
+    const k = dayKey(), s = metric('strain'), r = metric('recovery'), q = metric('sleep');
+    const z = SYNC && SYNC.series && SYNC.series.zones && SYNC.series.zones[k];
+    const line = (m, fn) => (m.src === 'calc' && m.info ? `<p class="calc-today">${fn(m.info)}</p>` : m.src === 'manual' ? '<p class="calc-today">Today: you entered this value manually, so it is used as-is.</p>' : '');
+    openSheet(`
+      <h2 id="sheet-title">How scores are calculated</h2>
+      <p class="sheet-sub">Only real data is used: values synced from Google Health or typed by you. Missing data shows "–". Values you type always override calculated ones.</p>
+      <h3>Strain (0–21)</h3>
+      <p class="calc">Heart-rate load (TRIMP) from minutes in Google Health heart-rate zones:<br><code>load = 1×light + 2×moderate + 3×vigorous + 4×peak</code><br><code>strain = 21 × ln(1 + load/25) ÷ ln(1 + 600/25)</code>, max 21.<br>Logarithmic like WHOOP: the first minutes of effort add the most. If zone minutes are unavailable, Active Zone Minutes are used (fat-burn×2, cardio/peak AZM×1.5/×2).</p>
+      ${line(s, (i) => `Today: load ${i.trimp}${z ? ` (light ${z.light}, moderate ${z.moderate}, vigorous ${z.vigorous}, peak ${z.peak} min)` : ''} → strain ${i.value}.`)}
+      <h3>Recovery (%)</h3>
+      <p class="calc">Compares today with your own baseline from the previous 30 days:<br><code>HRV score = 60 + 20 × z</code>, z = (ln HRV today − mean ln HRV) ÷ SD<br><code>RHR score = 60 + 20 × z</code>, z = (mean RHR − RHR today) ÷ SD<br><code>sleep score = hours asleep ÷ goal × 100</code><br><code>recovery = 0.6×HRV + 0.2×RHR + 0.2×sleep</code> (each 0–100; weights re-balanced if a part is missing).<br>Shows "Calibrating" until at least 4 previous days of HRV exist. Green ≥ 67, yellow 34–66, red &lt; 34.</p>
+      ${line(r, (i) => `Today: HRV ${i.parts.hrv}${i.parts.rhr !== undefined ? `, RHR ${i.parts.rhr}` : ''}${i.parts.sleep !== undefined ? `, sleep ${i.parts.sleep}` : ''} → ${i.value}% (baseline HRV ${i.baseline.hrv} ms over ${i.hrvDays} days).`)}
+      ${r.v === null && r.info && r.info.calibrating ? `<p class="calc-today">Today: calibrating (${r.info.hrvDays}/${r.info.need} days of HRV).</p>` : ''}
+      <h3>Sleep quality (%)</h3>
+      <p class="calc">The Google Health API does not provide a sleep score, so Pulse uses:<br><code>0.5×efficiency + 0.3×duration + 0.2×restorative</code><br>efficiency = time asleep ÷ time in bed; duration = hours asleep ÷ goal (max 100); restorative = (deep + REM) share ÷ 40% (max 100). Without stages: 0.6×efficiency + 0.4×duration.</p>
+      ${line(q, (i) => `Today: efficiency ${i.parts.efficiency}, duration ${i.parts.duration}${i.parts.restorative !== undefined ? `, restorative ${i.parts.restorative}` : ''} → ${i.value}%.`)}
+      <p class="disclaimer">These are Pulse's own estimates for personal insight, not WHOOP or Fitbit scores and not medical advice.</p>
+      <div class="sheet-actions" style="grid-template-columns:1fr"><button class="btn primary" type="button" id="ex-close">Done</button></div>`);
+    $('#ex-close').addEventListener('click', closeSheet);
   }
 
   // ---------- tabs ----------
@@ -403,6 +606,7 @@
     openSheet(`
       <h2 id="sheet-title">${esc(o.title)}</h2>
       <p class="sheet-sub">${esc(o.sub)}</p>
+      ${o.note ? `<p class="sheet-note">${esc(o.note)}</p>` : ''}
       <div class="readout"><span id="ne-read">–</span>${o.unit ? `<small>${esc(o.unit)}</small>` : ''}</div>
       <div class="readout-sub" id="ne-word"></div>
       <input type="range" id="ne-range" min="${o.min}" max="${o.max}" step="${o.step}" value="${val === null ? o.start : val}" aria-label="${esc(o.title)} slider">
@@ -412,7 +616,7 @@
         <button class="step" type="button" id="ne-plus" aria-label="Increase">+</button>
       </div>
       <div class="sheet-actions">
-        ${o.value !== null && o.onClear ? '<button class="btn danger" type="button" id="ne-clear">Clear</button>' : '<button class="btn" type="button" id="ne-cancel">Cancel</button>'}
+        ${o.canClear && o.onClear ? `<button class="btn danger" type="button" id="ne-clear">${o.clearLabel || 'Clear'}</button>` : '<button class="btn" type="button" id="ne-cancel">Cancel</button>'}
         <button class="btn primary" type="button" id="ne-save">Save</button>
       </div>`, o.onClose);
     const range = $('#ne-range'), num = $('#ne-num'), saveBtn = $('#ne-save');
@@ -441,7 +645,10 @@
 
   function openRingEditor(m) {
     const c = RINGS[m];
+    const mt = metric(m), man = manualVal(m);
     openNumberEditor({
+      canClear: man !== null, clearLabel: isNum((computed(m, dayKey()) || {}).value) ? 'Use calculated' : 'Clear',
+      note: man === null && mt.src === 'calc' ? `Calculated from Google Health data. Saving a value here overrides it for today.` : (man !== null && computed(m, dayKey()) && isNum(computed(m, dayKey()).value) ? `Calculated value: ${fmtNum(computed(m, dayKey()).value, c.dec)}. Clear to use it.` : ''),
       title: c.title, sub: `Today · ${c.sub}. Copy the number from your Fitbit app.`,
       unit: m === 'strain' ? '/ 21' : '%', min: 0, max: c.max, step: c.step, dec: c.dec, bump: c.bump, start: c.start,
       value: getVal(m),
@@ -459,6 +666,8 @@
       title: c.label, sub: `Today · enter the value from your Fitbit app${c.unit ? ` (${c.unit})` : ''}.`,
       unit: c.unit, min: c.min, max: c.max, step: c.step, dec: c.dec, bump: c.bump, start: c.start,
       value: getVal(f), color: () => c.color,
+      canClear: manualVal(f) !== null,
+      note: manualVal(f) === null && syncedVal(f, dayKey()) !== null ? 'From Google Health. Saving a value here overrides it for today.' : (manualVal(f) !== null && syncedVal(f, dayKey()) !== null ? `Google Health value: ${fmtNum(syncedVal(f, dayKey()), c.dec)}. Clear to use it.` : ''),
       onSave: (v) => { setFields({ [f]: v }); toast(`${c.label} saved`); },
       onClear: () => { setFields({ [f]: null }); toast(`${c.label} cleared`); }
     });
@@ -466,13 +675,13 @@
   function openGoalEditor() {
     openNumberEditor({
       title: 'Sleep goal', sub: 'Target hours of sleep per night.', unit: '', min: 4, max: 12, step: 0.25, dec: 2, bump: 0.25, start: 8,
-      value: state.settings.sleepGoal || 8, fmt: fmtHours, color: () => COL.sleep,
+      value: state.settings.sleepGoal || 8, fmt: fmtHours, color: () => COL.sleep, canClear: false,
       onSave: (v) => { state.settings.sleepGoal = v; save(); toast('Sleep goal saved'); }
     });
   }
 
   function openSleepSheet() {
-    const h0 = getVal('sleepHours'), bed0 = getStr('bedtime') || '', wake0 = getStr('wake') || '';
+    const h0 = getVal('sleepHours'), bed0 = getStr('bedtime') || '', wake0 = getStr('wake') || '', manualSleep = manualVal('sleepHours') !== null;
     openSheet(`
       <h2 id="sheet-title">Log sleep</h2>
       <p class="sheet-sub">Last night's sleep, saved for today (${esc(longDate())}).</p>
@@ -491,7 +700,7 @@
         </div>
       </div>
       <div class="sheet-actions">
-        ${h0 !== null ? '<button class="btn danger" type="button" id="sl-clear">Clear</button>' : '<button class="btn" type="button" id="sl-cancel">Cancel</button>'}
+        ${manualSleep ? '<button class="btn danger" type="button" id="sl-clear">Clear</button>' : '<button class="btn" type="button" id="sl-cancel">Cancel</button>'}
         <button class="btn primary" type="button" id="sl-save">Save</button>
       </div>`);
     const bed = $('#sl-bed'), wake = $('#sl-wake'), hin = $('#sl-h'), saveBtn = $('#sl-save');
@@ -826,6 +1035,10 @@
   // ---------- global events ----------
   document.addEventListener('click', (e) => {
     const t = e.target;
+    if (t.closest('[data-settings]')) { openSettings(); return; }
+    if (t.closest('[data-explain]')) { if (!$('#sheet').hidden) { closeSheet(); setTimeout(openExplainer, 330); } else openExplainer(); return; }
+    if (t.closest('#btn-connect')) { startConnect(); return; }
+    if (t.closest('#btn-sync-now')) { doSync(true); return; }
     const ring = t.closest('.ringw'); if (ring) { openRingEditor(ring.dataset.ring); return; }
     const er = t.closest('[data-edit-ring]'); if (er) { openRingEditor(er.dataset.editRing); return; }
     const hv = t.closest('[data-health]'); if (hv) { openHealthEditor(hv.dataset.health); return; }
@@ -833,7 +1046,14 @@
     const q = t.closest('[data-quick]'); if (q) { workoutForm(q.dataset.quick, null, false); return; }
     const del = t.closest('[data-del]');
     if (del) {
-      const idx = state.workouts.findIndex((w) => w.id === del.dataset.del);
+      const id = del.dataset.del;
+      if (id.startsWith('gh:')) {
+        state.hiddenSync = (state.hiddenSync || []).concat(id);
+        save(); render();
+        toast('Hidden from Pulse', { label: 'Undo', fn: () => { state.hiddenSync = state.hiddenSync.filter((x) => x !== id); save(); render(); } });
+        return;
+      }
+      const idx = state.workouts.findIndex((w) => w.id === id);
       if (idx < 0) return;
       const [removed] = state.workouts.splice(idx, 1);
       save(); render();
@@ -847,18 +1067,53 @@
 
   let lastKey = dayKey();
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && dayKey() !== lastKey) { lastKey = dayKey(); render(); }
+    if (document.visibilityState !== 'visible') return;
+    if (dayKey() !== lastKey) { lastKey = dayKey(); render(); }
+    if (PS && PS.tokenValid()) doSync(false);
   });
   window.addEventListener('storage', (e) => { if (e.key === KEY) { state = load(); render(); } });
 
   // ---------- boot ----------
+  let redirect = { handled: false };
+  if (PS) {
+    redirect = PS.handleRedirect();
+    if (!redirect.handled && PS.maybeSilentReconnect()) return; // navigating to Google (prompt=none); comes straight back
+  }
   render();
   showTab(location.hash.slice(1) || 'today', false);
   requestAnimationFrame(() => replayRings($('#tab-' + currentTab)));
+  if (redirect.handled) {
+    if (redirect.ok) toast('Google Health connected');
+    else if (redirect.error === 'access_denied') toast('Google Health access was not granted');
+    else if (!redirect.silent) toast(`Could not connect Google Health (${redirect.error})`);
+  }
+  if (PS && PS.tokenValid()) doSync(!!redirect.ok);
+
+  // Pull to refresh (Today tab)
+  (function () {
+    let y0 = null, pulled = false;
+    const ind = $('#ptr');
+    window.addEventListener('touchstart', (e) => { y0 = window.scrollY <= 0 && currentTab === 'today' && $('#sheet').hidden ? e.touches[0].clientY : null; pulled = false; }, { passive: true });
+    window.addEventListener('touchmove', (e) => {
+      if (y0 === null) return;
+      const dy = e.touches[0].clientY - y0;
+      pulled = dy > 80;
+      ind.hidden = dy < 20;
+      ind.textContent = pulled ? 'Release to sync' : 'Pull to sync';
+    }, { passive: true });
+    window.addEventListener('touchend', () => {
+      ind.hidden = true;
+      if (y0 !== null && pulled) {
+        if (PS && PS.tokenValid()) doSync(true);
+        else if (PS && PS.status() !== 'no-client') toast('Connect Google Health to sync');
+      }
+      y0 = null; pulled = false;
+    });
+  })();
 
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
     window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js', { scope: './' }).catch(() => {}); });
   }
 
-  window.__pulse = { drawCard, ringsCanvas, dayKey, migrate };
+  window.__pulse = { drawCard, ringsCanvas, dayKey, migrate, metric, doSync };
 })();

@@ -1,14 +1,17 @@
-/* Pulse service worker v3: network-first for everything, cache fallback for offline use. */
-const CACHE = 'pulse-shell-v3';
+/* Pulse service worker v4: network-first for everything, cache fallback for offline use. */
+const CACHE = 'pulse-shell-v4';
 const SHELL = [
   './',
   './index.html',
-  './styles.css?v=2',
-  './app.js?v=2',
-  './manifest.json?v=2',
-  './icons/icon-192.png?v=2',
-  './icons/icon-512.png?v=2',
-  './icons/apple-touch-icon.png?v=2'
+  './styles.css?v=3',
+  './config.js?v=3',
+  './metrics.js?v=3',
+  './sync.js?v=3',
+  './app.js?v=3',
+  './manifest.json?v=3',
+  './icons/icon-192.png?v=3',
+  './icons/icon-512.png?v=3',
+  './icons/apple-touch-icon.png?v=3'
 ];
 
 self.addEventListener('install', (event) => {
