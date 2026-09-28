@@ -1,5 +1,5 @@
 /* Pulse service worker v4: network-first for everything, cache fallback for offline use. */
-const CACHE = 'pulse-shell-v4';
+const CACHE = 'pulse-shell-v5';
 const SHELL = [
   './',
   './index.html',
